@@ -6,6 +6,10 @@ import { AppService } from './app.service';
 import { envConfig } from './config/env.config';
 import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
+import { WalletModule } from './modules/wallet/wallet.module';
+import { MonnifyModule } from './modules/monnify/monnify.module';
+import { TransactionModule } from './modules/transaction/transaction.module';
+import { PaymentModule } from './modules/payment/payment.module';
 
 @Module({
   imports: [
@@ -23,6 +27,10 @@ import { UsersModule } from './modules/users/users.module';
     }),
     AuthModule,
     UsersModule,
+    WalletModule,
+    MonnifyModule,
+    TransactionModule,
+    PaymentModule,
   ],
   controllers: [AppController],
   providers: [AppService],

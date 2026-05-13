@@ -1,36 +1,43 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import Twilio from 'twilio';
+import twilio from 'twilio';
 
 @Injectable()
 export class MessagingService {
-  private client?: Twilio.Twilio;
+  private client?: twilio.Twilio;
   private from?: string;
   private enabled = false;
   private logger = new Logger(MessagingService.name);
 
   constructor(private configService: ConfigService) {
-    const sid = this.configService.get<string>('twilio.accountSid') || this.configService.get<string>('twilio.accountSID');
-    const token = this.configService.get<string>('twilio.authToken') || this.configService.get<string>('twilio.authToken');
+    const sid = this.configService.get<string>('twilio.accountSid');
+    const token = this.configService.get<string>('twilio.authToken');
     const from = this.configService.get<string>('twilio.from');
+
     if (sid && token && from) {
-      this.client = Twilio(sid, token);
-      this.from = from; // E.164 like '+1415...'
+      this.client = twilio(sid, token);
+      this.from = from;
       this.enabled = true;
     } else {
-      this.logger.warn('Twilio not configured — SMS messages will be logged instead of sent');
+      this.logger.warn(
+        'Twilio not configured — SMS messages will be logged instead of sent',
+      );
     }
   }
 
   async sendSms(to: string, body: string) {
     if (!this.enabled) {
-      // fallback: log message
       this.logger.log(`[mock sms] to=${to} body=${body}`);
       return { sid: 'mock', to, body };
     }
 
     try {
-      const msg = await this.client!.messages.create({ from: this.from!, to, body });
+      const msg = await this.client!.messages.create({
+        from: this.from!,
+        to,
+        body,
+      });
+
       this.logger.log(`SMS sent: ${msg.sid}`);
       return msg;
     } catch (err) {
