@@ -1,6 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
 import axios from 'axios';
-import { v4 as uuidv4 } from 'uuid';
 import * as crypto from 'crypto';
 
 @Injectable()
@@ -122,7 +121,7 @@ export class MonnifyService {
     customer?: { name?: string; email?: string },
   ) {
     const token = await this.getAccessToken();
-    const paymentReference = `${userId}-${uuidv4()}`;
+    const paymentReference = `${userId}-${crypto.randomUUID()}`;
     const url = `${this.getBaseUrl()}/merchant/transactions/init-transaction`;
     const payload: any = {
       paymentReference,
@@ -355,7 +354,7 @@ export class MonnifyService {
     customer?: { name?: string; email?: string },
   ) {
     const token = await this.getAccessToken();
-    const accountReference = `${userId}-${uuidv4()}`;
+    const accountReference = `${userId}-${crypto.randomUUID()}`;
     const url = `${this.getBaseUrl()}/bank-transfer/reserved-accounts`;
 
     const payload: any = {
