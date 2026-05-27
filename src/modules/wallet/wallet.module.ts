@@ -6,6 +6,7 @@ import { WalletSchema } from './schemas/wallet.schema';
 import { MonnifyModule } from '../monnify/monnify.module';
 import { PaymentModule } from '../payment/payment.module';
 import { TransactionModule } from '../transaction/transaction.module';
+import { UsersModule } from '../users/users.module';
 
 @Module({
   imports: [
@@ -13,6 +14,7 @@ import { TransactionModule } from '../transaction/transaction.module';
     PaymentModule,
     TransactionModule,
     MonnifyModule,
+    UsersModule,
   ],
   controllers: [WalletController],
   providers: [WalletService],

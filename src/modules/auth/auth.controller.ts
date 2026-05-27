@@ -1,6 +1,7 @@
 import { Body, Controller, Post, BadRequestException } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { UsersService } from '../users/users.service';
+import { WalletService } from '../wallet/wallet.service';
 import { MailService } from '../mail/mail.service';
 import { MessagingService } from '../messaging/messaging.service';
 import { CreateStudentDto } from './dto/create-student.dto';
@@ -27,6 +28,7 @@ export class AuthController {
     private usersService: UsersService,
     private mailService: MailService,
     private messagingService: MessagingService,
+    private walletService: WalletService,
   ) {}
 
   @Post('register/student')
@@ -41,6 +43,9 @@ export class AuthController {
       verified: false,
       verificationCode: code,
     });
+
+    // create wallet (provider reserved account) for the user
+    await this.walletService.createWalletForUser(String(created.id)).catch(() => {});
 
     // send verification code to user's phone via SMS (Twilio)
     await this.messagingService
@@ -73,6 +78,9 @@ export class AuthController {
       verified: false,
       verificationCode: code,
     });
+    // create wallet (provider reserved account) for the driver
+    await this.walletService.createWalletForUser(String(created.id)).catch(() => {});
+
     await this.messagingService
       .sendSms(created.phone, `Your verification code is ${code}`)
       .catch((e) => {

@@ -109,4 +109,8 @@ export class UsersService {
     if (bankCode) user.bankCode = bankCode;
     return user.save();
   }
+
+  async findByDriverTagNumber(tag: string) {
+    return this.userModel.findOne({ driverTagNumber: tag }).exec();
+  }
 }
