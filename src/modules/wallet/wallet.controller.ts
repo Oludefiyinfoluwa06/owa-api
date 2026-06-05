@@ -1,4 +1,4 @@
-import { Controller, Get, Param, Post, Body, UseGuards, Query } from '@nestjs/common';
+import { Controller, Get, Post, Body, UseGuards, Query } from '@nestjs/common';
 import { WalletService } from './wallet.service';
 import { JwtAuthGuard } from '../auth/guard/jwt-auth.guard';
 import { AuthUser } from '../../common/decorators/auth-user.decorator';
@@ -20,8 +20,14 @@ export class WalletController {
 
   @UseGuards(JwtAuthGuard)
   @Post('create')
-  async create(@AuthUser() user: any, @Body() body: { skipProvider?: boolean }) {
-    return this.walletService.createWalletForUser(String(user.sub || user.id), !!body.skipProvider);
+  async create(
+    @AuthUser() user: any,
+    @Body() body: { skipProvider?: boolean },
+  ) {
+    return this.walletService.createWalletForUser(
+      String(user.sub || user.id),
+      !!body.skipProvider,
+    );
   }
 
   @UseGuards(JwtAuthGuard)
@@ -76,16 +82,35 @@ export class WalletController {
   async transfer(
     @AuthUser() user: any,
     @Body()
-    body: { driverTagNumber: string; amount: number; remark?: string; pin: string },
+    body: {
+      driverTagNumber: string;
+      amount: number;
+      remark?: string;
+      pin: string;
+    },
   ) {
     const userId = String(user.sub || user.id);
-    return this.walletService.transfer(userId, body.driverTagNumber, body.amount, body.remark, body.pin);
+    return this.walletService.transfer(
+      userId,
+      body.driverTagNumber,
+      body.amount,
+      body.remark,
+      body.pin,
+    );
   }
 
   @UseGuards(JwtAuthGuard)
   @Get('transactions')
-  async transactions(@AuthUser() user: any, @Query('page') page = '1', @Query('limit') limit = '20') {
+  async transactions(
+    @AuthUser() user: any,
+    @Query('page') page = '1',
+    @Query('limit') limit = '20',
+  ) {
     const userId = String(user.sub || user.id);
-    return this.walletService.getTransactions(userId, Number(page), Number(limit));
+    return this.walletService.getTransactions(
+      userId,
+      Number(page),
+      Number(limit),
+    );
   }
 }

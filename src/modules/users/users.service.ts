@@ -40,12 +40,16 @@ export class UsersService {
     return created.save();
   }
 
+  async findById(userId: string) {
+    return await this.userModel.findById(userId);
+  }
+
   async findByPhone(phone: string) {
-    return this.userModel.findOne({ phone }).exec();
+    return await this.userModel.findOne({ phone });
   }
 
   async findByEmail(email: string) {
-    return this.userModel.findOne({ email }).exec();
+    return await this.userModel.findOne({ email });
   }
 
   async verifyUser(phone: string, code: string) {
@@ -111,6 +115,6 @@ export class UsersService {
   }
 
   async findByDriverTagNumber(tag: string) {
-    return this.userModel.findOne({ driverTagNumber: tag }).exec();
+    return await this.userModel.findOne({ driverTagNumber: tag });
   }
 }
