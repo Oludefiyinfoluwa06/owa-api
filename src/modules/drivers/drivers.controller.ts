@@ -73,7 +73,7 @@ export class DriversController {
       file?.buffer,
       file?.originalname,
     );
-    return { id: updated.id, message: 'Driver details updated successfully' };
+    return { id: updated._id, message: 'Driver details updated successfully' };
   }
 
   @Post('bank')
@@ -81,7 +81,7 @@ export class DriversController {
   async bank(@AuthUser() user: any, @Body() body: DriverBankDto) {
     const updated = await this.driversService.updateBank(user.phone, body);
     return {
-      id: updated.id,
+      id: updated._id,
       message: 'Driver bank details updated successfully',
     };
   }

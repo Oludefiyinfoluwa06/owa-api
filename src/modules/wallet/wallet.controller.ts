@@ -9,13 +9,13 @@ export class WalletController {
   @UseGuards(JwtAuthGuard)
   @Get('balance')
   async getBalance(@AuthUser() user: any) {
-    return this.walletService.getBalance(String(user.sub || user.id));
+    return this.walletService.getBalance(String(user.userId));
   }
 
   @UseGuards(JwtAuthGuard)
   @Get('me')
   async getWallet(@AuthUser() user: any) {
-    return this.walletService.getWalletDetails(String(user.sub || user.id));
+    return this.walletService.getWalletDetails(String(user.userId));
   }
 
   @UseGuards(JwtAuthGuard)
@@ -25,7 +25,7 @@ export class WalletController {
     @Body() body: { skipProvider?: boolean },
   ) {
     return this.walletService.createWalletForUser(
-      String(user.sub || user.id),
+      String(user.userId),
       !!body.skipProvider,
     );
   }
@@ -41,7 +41,7 @@ export class WalletController {
       opts?: any;
     },
   ) {
-    const userId = String(user.sub || user.id);
+    const userId = String(user.userId);
     const { amount, method, opts } = body;
     return this.walletService.topUp(userId, amount, method, opts || {});
   }
@@ -65,7 +65,7 @@ export class WalletController {
   @UseGuards(JwtAuthGuard)
   @Post('debit')
   async debit(@AuthUser() user: any, @Body() body: { amount: number }) {
-    const userId = String(user.sub || user.id);
+    const userId = String(user.userId);
     const { amount } = body;
     return this.walletService.debit(userId, amount);
   }
@@ -73,7 +73,7 @@ export class WalletController {
   @UseGuards(JwtAuthGuard)
   @Post('set-pin')
   async setPin(@AuthUser() user: any, @Body() body: { pin: string }) {
-    const userId = String(user.sub || user.id);
+    const userId = String(user.userId);
     return this.walletService.setPin(userId, body.pin);
   }
 
@@ -89,7 +89,7 @@ export class WalletController {
       pin: string;
     },
   ) {
-    const userId = String(user.sub || user.id);
+    const userId = String(user.userId);
     return this.walletService.transfer(
       userId,
       body.driverTagNumber,
@@ -106,7 +106,7 @@ export class WalletController {
     @Query('page') page = '1',
     @Query('limit') limit = '20',
   ) {
-    const userId = String(user.sub || user.id);
+    const userId = String(user.userId);
     return this.walletService.getTransactions(
       userId,
       Number(page),

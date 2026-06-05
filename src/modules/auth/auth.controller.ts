@@ -42,13 +42,6 @@ export class AuthController {
       verificationCode: code,
     });
 
-    console.log({ created });
-
-    // create wallet (provider reserved account) for the user
-    await this.walletService
-      .createWalletForUser(String(created.id))
-      .catch(() => {});
-
     // send verification code to user's phone via SMS (Twilio)
     await this.messagingService
       .sendSms(created.phone, `Your verification code is ${code}`)
@@ -62,14 +55,14 @@ export class AuthController {
       });
 
     return {
-      id: created.id,
-      phone: created.phone,
+      id: created._id,
       message: 'Verification code sent',
     };
   }
 
   @Post('register/driver')
   async registerDriver(@Body() dto: CreateDriverDto) {
+    const code = generate4Digit();
     const created = await this.usersService.createUser({
       fullName: dto.fullName,
       email: dto.email,
@@ -77,26 +70,37 @@ export class AuthController {
       password: dto.password,
       role: 'driver',
       verified: false,
+      verificationCode: code,
     });
 
-    // create wallet (provider reserved account) for the driver
-    await this.walletService
-      .createWalletForUser(String(created.id))
-      .catch(() => {});
-
-    const accessToken = await this.authService.login(created);
+    // send verification code to user's phone via SMS (Twilio)
+    await this.messagingService
+      .sendSms(created.phone, `Your verification code is ${code}`)
+      .catch((e) => {
+        console.error('Failed to send SMS verification', e);
+        this.mailService
+          .sendVerificationEmail(created.email, code)
+          .catch(() => {});
+      });
 
     return {
-      id: created.id,
-      phone: created.phone,
-      accessToken,
+      id: created._id,
+      message: 'Verification code sent',
     };
   }
 
   @Post('verify')
   async verify(@Body() dto: VerifyAccountDto) {
     const user = await this.usersService.verifyUser(dto.phone, dto.code);
-    return { id: user.id, phone: user.phone, verified: user.verified };
+    await this.walletService
+      .createWalletForUser(String(user._id))
+      .catch(() => {});
+
+    const token = await this.authService.login(user);
+    return {
+      message: 'Account verified',
+      accessToken: token.accessToken,
+    };
   }
 
   @Post('login')
