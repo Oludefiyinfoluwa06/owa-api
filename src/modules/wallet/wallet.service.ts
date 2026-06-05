@@ -7,6 +7,8 @@ import {
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { MonnifyService } from '../monnify/monnify.service';
+import * as bcrypt from 'bcryptjs';
+import { UsersService } from '../users/users.service';
 
 // Documents
 import { WalletDocument } from './schemas/wallet.schema';
@@ -21,7 +23,99 @@ export class WalletService {
     private readonly monnify: MonnifyService,
     private readonly paymentService: PaymentService,
     private readonly transactionService: TransactionService,
+    private readonly usersService: UsersService,
   ) {}
+
+  private async ensureWallet(userId: string) {
+    const w = await this.walletModel.findOne({ userId });
+    if (w) return w;
+    return this.createWalletForUser(userId, true);
+  }
+
+  async setPin(userId: string, pin: string) {
+    if (!/^[0-9]{4}$/.test(String(pin)))
+      throw new BadRequestException('PIN must be a 4-digit number');
+    const wallet = await this.ensureWallet(userId);
+    const salt = await bcrypt.genSalt(10);
+    const hash = await bcrypt.hash(String(pin), salt);
+    await this.walletModel.updateOne(
+      { _id: wallet._id },
+      { $set: { pinHash: hash } },
+    );
+    return { ok: true };
+  }
+
+  private async verifyPinHash(pin: string, hash?: string) {
+    if (!hash) return false;
+    return bcrypt.compare(String(pin), hash);
+  }
+
+  async transfer(
+    fromUserId: string,
+    driverTagNumber: string,
+    amount: number,
+    remark?: string,
+    pin?: string,
+  ) {
+    if (amount <= 0) throw new BadRequestException('Amount must be positive');
+
+    const senderWallet = await this.walletModel.findOne({ userId: fromUserId });
+    if (!senderWallet) throw new NotFoundException('Sender wallet not found');
+    if (!senderWallet.pinHash)
+      throw new BadRequestException('Wallet PIN not set');
+    const ok = await this.verifyPinHash(pin || '', senderWallet.pinHash);
+    if (!ok) throw new BadRequestException('Invalid PIN');
+
+    const driver =
+      await this.usersService.findByDriverTagNumber(driverTagNumber);
+    if (!driver) throw new NotFoundException('Driver not found');
+
+    const receiverWallet = await this.ensureWallet(String(driver._id));
+
+    if (Number(senderWallet.balance) < amount)
+      throw new BadRequestException('Insufficient funds');
+
+    // perform balance updates
+    await this.walletModel.findByIdAndUpdate(senderWallet._id, {
+      $inc: { balance: -amount },
+    });
+    await this.walletModel.findByIdAndUpdate(receiverWallet._id, {
+      $inc: { balance: amount },
+    });
+
+    // create transaction records: DEBIT for sender, TOPUP for receiver
+    await this.transactionService.createTransaction({
+      type: 'DEBIT',
+      userId: fromUserId,
+      walletId: String(senderWallet._id),
+      amount,
+      metadata: { remark, transferToDriverTag: driverTagNumber },
+      toUserId: String(driver._id),
+      toWalletId: String(receiverWallet._id),
+    } as any);
+
+    await this.transactionService.createTransaction({
+      type: 'TOPUP',
+      userId: String(driver._id),
+      walletId: String(receiverWallet._id),
+      amount,
+      metadata: { remark, transferFromUser: fromUserId },
+      toUserId: fromUserId,
+      toWalletId: String(senderWallet._id),
+    } as any);
+
+    return { ok: true };
+  }
+
+  async getTransactions(userId: string, page = 1, limit = 20) {
+    const wallet = await this.walletModel.findOne({ userId }).lean();
+    if (!wallet) throw new NotFoundException('Wallet not found');
+    return this.transactionService.findByWalletId(
+      String(wallet._id),
+      page,
+      limit,
+    );
+  }
 
   async topUp(
     userId: string,
@@ -160,10 +254,7 @@ export class WalletService {
     if (skipProvider) {
       const wallet = await this.walletModel.create({ userId });
       try {
-        // fetch user info to enrich provider payload
-        // Caller should supply user details if needed; default to userId
-        const customer = { name: userId };
-        const ra = await this.monnify.createReservedAccount(userId, customer);
+        const ra = await this.monnify.createReservedAccount(userId);
         if (ra && ra.accountNumber) {
           await this.walletModel.updateOne(
             { _id: wallet._id },
@@ -193,9 +284,8 @@ export class WalletService {
       'Creating provider reserved account before local wallet for',
       userId,
     );
-    // fetch user info and include customer name/email in provider request
-    const customer = { name: userId };
-    const ra = await this.monnify.createReservedAccount(userId, customer);
+
+    const ra = await this.monnify.createReservedAccount(userId);
     if (!ra || !ra.accountNumber) {
       this.logger.error('Monnify did not return accountNumber', ra);
       throw new Error('Failed to create provider reserved account');

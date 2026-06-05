@@ -1,6 +1,7 @@
 import { Body, Controller, Post, BadRequestException } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { UsersService } from '../users/users.service';
+import { WalletService } from '../wallet/wallet.service';
 import { MailService } from '../mail/mail.service';
 import { MessagingService } from '../messaging/messaging.service';
 import { CreateStudentDto } from './dto/create-student.dto';
@@ -9,8 +10,6 @@ import { VerifyAccountDto } from './dto/verify-account.dto';
 import { LoginDto } from './dto/login.dto';
 import { PasswordRecoveryDto } from './dto/password-recovery.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
-import { DriverDetailsDto } from './dto/driver-details.dto';
-import { DriverBankDto } from './dto/driver-bank.dto';
 
 function generate4Digit() {
   return Math.floor(1000 + Math.random() * 9000).toString();
@@ -27,6 +26,7 @@ export class AuthController {
     private usersService: UsersService,
     private mailService: MailService,
     private messagingService: MessagingService,
+    private walletService: WalletService,
   ) {}
 
   @Post('register/student')
@@ -41,6 +41,13 @@ export class AuthController {
       verified: false,
       verificationCode: code,
     });
+
+    console.log({ created });
+
+    // create wallet (provider reserved account) for the user
+    await this.walletService
+      .createWalletForUser(String(created.id))
+      .catch(() => {});
 
     // send verification code to user's phone via SMS (Twilio)
     await this.messagingService
@@ -63,7 +70,6 @@ export class AuthController {
 
   @Post('register/driver')
   async registerDriver(@Body() dto: CreateDriverDto) {
-    const code = generate4Digit();
     const created = await this.usersService.createUser({
       fullName: dto.fullName,
       email: dto.email,
@@ -71,21 +77,19 @@ export class AuthController {
       password: dto.password,
       role: 'driver',
       verified: false,
-      verificationCode: code,
     });
-    await this.messagingService
-      .sendSms(created.phone, `Your verification code is ${code}`)
-      .catch((e) => {
-        // eslint-disable-next-line no-console
-        console.error('Failed to send SMS verification', e);
-        this.mailService
-          .sendVerificationEmail(created.email, code)
-          .catch(() => {});
-      });
+
+    // create wallet (provider reserved account) for the driver
+    await this.walletService
+      .createWalletForUser(String(created.id))
+      .catch(() => {});
+
+    const accessToken = await this.authService.login(created);
+
     return {
       id: created.id,
       phone: created.phone,
-      message: 'Verification code sent',
+      accessToken,
     };
   }
 
@@ -121,25 +125,5 @@ export class AuthController {
       throw new BadRequestException('Passwords do not match');
     await this.usersService.resetPassword(dto.email, dto.token, dto.password);
     return { message: 'Password reset successful' };
-  }
-
-  @Post('driver/details')
-  async driverDetails(@Body() body: { phone: string } & DriverDetailsDto) {
-    const updated = await this.usersService.addDriverDetails(
-      body.phone,
-      body as any,
-    );
-    return { id: updated.id, phone: updated.phone };
-  }
-
-  @Post('driver/bank')
-  async driverBank(@Body() body: { phone: string } & DriverBankDto) {
-    const updated = await this.usersService.addBankDetails(
-      body.phone,
-      body.bankName,
-      body.accountNumber,
-      body.bankCode,
-    );
-    return { id: updated.id, phone: updated.phone };
   }
 }

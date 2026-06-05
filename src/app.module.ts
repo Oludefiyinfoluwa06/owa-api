@@ -10,6 +10,8 @@ import { WalletModule } from './modules/wallet/wallet.module';
 import { MonnifyModule } from './modules/monnify/monnify.module';
 import { TransactionModule } from './modules/transaction/transaction.module';
 import { PaymentModule } from './modules/payment/payment.module';
+import { DriversModule } from './modules/drivers/drivers.module';
+import { CloudinaryModule } from './common/cloudinary/cloudinary.module';
 
 @Module({
   imports: [
@@ -31,6 +33,8 @@ import { PaymentModule } from './modules/payment/payment.module';
     MonnifyModule,
     TransactionModule,
     PaymentModule,
+    DriversModule,
+    CloudinaryModule,
   ],
   controllers: [AppController],
   providers: [AppService],

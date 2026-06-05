@@ -1,9 +1,11 @@
 import { Injectable, Logger } from '@nestjs/common';
 import axios from 'axios';
 import * as crypto from 'crypto';
+import { UsersService } from '../users/users.service';
 
 @Injectable()
 export class MonnifyService {
+  constructor(private usersService: UsersService) {}
   private readonly logger = new Logger(MonnifyService.name);
   private token: string | null = null;
   private tokenExpiry = 0;
@@ -349,21 +351,21 @@ export class MonnifyService {
     };
   }
 
-  async createReservedAccount(
-    userId: string,
-    customer?: { name?: string; email?: string },
-  ) {
+  async createReservedAccount(userId: string) {
     const token = await this.getAccessToken();
     const accountReference = `${userId}-${crypto.randomUUID()}`;
     const url = `${this.getBaseUrl()}/bank-transfer/reserved-accounts`;
+    const user = await this.usersService.findById(userId);
+
+    console.log({ user });
 
     const payload: any = {
       accountReference,
-      accountName: customer?.name || userId,
+      accountName: user?.fullName,
       currencyCode: 'NGN',
       contractCode: process.env.MONNIFY_CONTRACT_CODE,
-      customerName: customer?.name,
-      customerEmail: customer?.email,
+      customerName: user?.fullName,
+      customerEmail: user?.email,
       getAllAvailableBanks: false,
     };
 
