@@ -357,8 +357,6 @@ export class MonnifyService {
     const url = `${this.getBaseUrl()}/bank-transfer/reserved-accounts`;
     const user = await this.usersService.findById(userId);
 
-    console.log({ user });
-
     const payload: any = {
       accountReference,
       accountName: user?.fullName,
@@ -368,8 +366,6 @@ export class MonnifyService {
       customerEmail: user?.email,
       getAllAvailableBanks: false,
     };
-
-    console.log('Creating Monnify reserved account with payload', payload);
 
     Object.keys(payload).forEach(
       (k) => payload[k] === undefined && delete payload[k],

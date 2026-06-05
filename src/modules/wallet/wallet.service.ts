@@ -137,7 +137,6 @@ export class WalletService {
       amount,
       customer,
     );
-    console.log({ reference: init.providerResponse.responseBody });
 
     const transactionReference =
       init.providerResponse.responseBody.transactionReference;
@@ -312,8 +311,7 @@ export class WalletService {
   async getWalletDetails(userId: string) {
     const wallet = await this.walletModel.findOne({ userId }).lean();
     if (!wallet) throw new NotFoundException('Wallet not found');
-    await this.paymentService.findByProviderReference; // placeholder to keep types
-    // fetch payments and transactions via services
+
     const paymentsList = await this.paymentService.findByUserId(userId);
     const transactions = await this.transactionService.findByWalletId(
       String(wallet._id),
