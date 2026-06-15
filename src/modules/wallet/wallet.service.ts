@@ -3,14 +3,14 @@ import {
   BadRequestException,
   NotFoundException,
   Logger,
+  Inject,
+  forwardRef,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { MonnifyService } from '../monnify/monnify.service';
 import * as bcrypt from 'bcryptjs';
 import { UsersService } from '../users/users.service';
-
-// Documents
 import { WalletDocument } from './schemas/wallet.schema';
 import { PaymentService } from '../payment/payment.service';
 import { TransactionService } from '../transaction/transaction.service';
@@ -23,6 +23,7 @@ export class WalletService {
     private readonly monnify: MonnifyService,
     private readonly paymentService: PaymentService,
     private readonly transactionService: TransactionService,
+    @Inject(forwardRef(() => UsersService))
     private readonly usersService: UsersService,
   ) {}
 
