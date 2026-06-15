@@ -1,5 +1,6 @@
 import {
   Controller,
+  Get,
   Post,
   UseGuards,
   UseInterceptors,
@@ -22,6 +23,12 @@ import { DriverBankDto } from './dto/driver-bank.dto';
 @Controller('drivers')
 export class DriversController {
   constructor(private driversService: DriversService) {}
+
+  @Get('profile')
+  @UseGuards(JwtAuthGuard)
+  async profile(@AuthUser() user: any) {
+    return this.driversService.getProfile(user.userId);
+  }
 
   @Post('onboard')
   @UseGuards(JwtAuthGuard)

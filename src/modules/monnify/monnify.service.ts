@@ -1,11 +1,14 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { forwardRef, Inject, Injectable, Logger } from '@nestjs/common';
 import axios from 'axios';
 import * as crypto from 'crypto';
 import { UsersService } from '../users/users.service';
 
 @Injectable()
 export class MonnifyService {
-  constructor(private usersService: UsersService) {}
+  constructor(
+    @Inject(forwardRef(() => UsersService))
+    private usersService: UsersService,
+  ) {}
   private readonly logger = new Logger(MonnifyService.name);
   private token: string | null = null;
   private tokenExpiry = 0;

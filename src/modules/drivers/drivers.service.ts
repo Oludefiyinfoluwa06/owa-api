@@ -5,13 +5,19 @@ import {
 } from '@nestjs/common';
 import { CloudinaryService } from '../../common/cloudinary/cloudinary.service';
 import { UsersService } from '../users/users.service';
+import { WalletService } from '../wallet/wallet.service';
 
 @Injectable()
 export class DriversService {
   constructor(
     private cloudinary: CloudinaryService,
     private usersService: UsersService,
+    private walletService: WalletService,
   ) {}
+
+  async getProfile(id: string) {
+    return this.usersService.getDriverProfile(id);
+  }
 
   async onboard(
     userId: string,

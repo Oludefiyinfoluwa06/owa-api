@@ -2,15 +2,22 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  Inject,
+  forwardRef,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import * as bcrypt from 'bcryptjs';
 import { UserDocument } from './schemas/user.schema';
+import { WalletService } from '../wallet/wallet.service';
 
 @Injectable()
 export class UsersService {
-  constructor(@InjectModel('User') private userModel: Model<UserDocument>) {}
+  constructor(
+    @InjectModel('User') private userModel: Model<UserDocument>,
+    @Inject(forwardRef(() => WalletService))
+    private walletService: WalletService,
+  ) {}
 
   private async hashPassword(password: string) {
     const salt = await bcrypt.genSalt(10);
@@ -116,5 +123,80 @@ export class UsersService {
 
   async findByDriverTagNumber(tag: string) {
     return await this.userModel.findOne({ driverTagNumber: tag });
+  }
+
+  async getProfile(userId: string) {
+    const user = await this.findById(userId);
+    if (!user) throw new NotFoundException('User not found');
+
+    // Student-specific profile representation (include wallet details)
+    if (user.role === 'student') {
+      let walletDetails: any = null;
+      try {
+        walletDetails = await this.walletService.getWalletDetails(
+          String(user._id),
+        );
+      } catch (e) {
+        walletDetails = null;
+      }
+
+      return {
+        id: user._id,
+        fullName: user.fullName,
+        email: user.email,
+        phone: user.phone,
+        profilePicture: user.profilePicture,
+        role: user.role,
+        verified: user.verified,
+        wallet: walletDetails.wallet,
+      };
+    }
+
+    // Default user profile
+    return {
+      id: user._id,
+      fullName: user.fullName,
+      email: user.email,
+      phone: user.phone,
+      profilePicture: user.profilePicture,
+      role: user.role,
+      verified: user.verified,
+    };
+  }
+
+  async getDriverProfile(userId: string) {
+    const user = await this.findById(userId);
+    if (!user) throw new NotFoundException('User not found');
+    if (user.role !== 'driver')
+      throw new BadRequestException('User is not a driver');
+
+    let walletInfo: any = null;
+    try {
+      const details = await this.walletService.getWalletDetails(
+        String(user._id),
+      );
+      walletInfo = details?.wallet || null;
+    } catch (e) {
+      walletInfo = null;
+    }
+
+    return {
+      id: user._id,
+      fullName: user.fullName,
+      email: user.email,
+      phone: user.phone,
+      profilePicture: user.profilePicture,
+      driverTagNumber: user.driverTagNumber,
+      vehicleType: user.vehicleType,
+      plateNumber: (user as any).plateNumber,
+      bankName: user.bankName,
+      accountNumber: user.accountNumber,
+      bankCode: user.bankCode,
+      idCardUrl: (user as any).idCardUrl,
+      driversLicenseUrl: (user as any).driversLicenseUrl,
+      verified: user.verified,
+      role: user.role,
+      wallet: walletInfo,
+    };
   }
 }

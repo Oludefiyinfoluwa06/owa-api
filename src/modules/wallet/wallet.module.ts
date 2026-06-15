@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { WalletService } from './wallet.service';
 import { WalletController } from './wallet.controller';
 import { MongooseModule } from '@nestjs/mongoose';
@@ -14,7 +14,7 @@ import { UsersModule } from '../users/users.module';
     PaymentModule,
     TransactionModule,
     MonnifyModule,
-    UsersModule,
+    forwardRef(() => UsersModule),
   ],
   controllers: [WalletController],
   providers: [WalletService],

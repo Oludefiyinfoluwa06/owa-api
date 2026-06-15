@@ -42,12 +42,9 @@ export class AuthController {
       verificationCode: code,
     });
 
-    // send verification code to user's phone via SMS (Twilio)
     await this.messagingService
       .sendSms(created.phone, `Your verification code is ${code}`)
       .catch((e) => {
-        // fallback: log and also attempt email
-        // eslint-disable-next-line no-console
         console.error('Failed to send SMS verification', e);
         this.mailService
           .sendVerificationEmail(created.email, code)
