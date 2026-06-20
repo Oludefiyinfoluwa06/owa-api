@@ -69,6 +69,30 @@ export class UsersService {
     return user.save();
   }
 
+  async verifyUserByEmail(email: string, code: string) {
+    const user = await this.findByEmail(email);
+    if (!user) throw new NotFoundException('User not found');
+    if (user.verificationCode !== code)
+      throw new BadRequestException('Invalid code');
+    user.verified = true;
+    user.verificationCode = undefined;
+    return user.save();
+  }
+
+  async setVerificationCodeByEmail(email: string, code: string) {
+    const user = await this.findByEmail(email);
+    if (!user) throw new NotFoundException('User not found');
+    user.verificationCode = code;
+    return user.save();
+  }
+
+  async setVerificationCodeByPhone(phone: string, code: string) {
+    const user = await this.findByPhone(phone);
+    if (!user) throw new NotFoundException('User not found');
+    user.verificationCode = code;
+    return user.save();
+  }
+
   async validateCredentials(phone: string, password: string) {
     const user = await this.findByPhone(phone);
     if (!user) return null;

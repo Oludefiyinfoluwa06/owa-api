@@ -40,7 +40,7 @@ export class MailService {
   }
 
   async sendVerificationEmail(to: string, code: string) {
-    const subject = 'Your verification code';
+    const subject = 'OWA - Your verification code';
     const html = `<p>Your verification code is <strong>${code}</strong></p>`;
     return this.sendMail(
       to,
@@ -51,7 +51,7 @@ export class MailService {
   }
 
   async sendRecoveryEmail(to: string, key: string) {
-    const subject = 'Password recovery key';
+    const subject = 'OWA - Password recovery key';
     const html = `<p>Your password recovery key is <strong>${key}</strong></p>`;
     return this.sendMail(to, subject, html, `Your recovery key is ${key}`);
   }

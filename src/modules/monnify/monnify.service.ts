@@ -249,10 +249,8 @@ export class MonnifyService {
       number: string;
       expiryMonth: string;
       expiryYear: string;
-      pin?: string;
       cvv?: string;
     },
-    deviceInformation: any,
     collectionChannel = 'API_NOTIFICATION',
   ) {
     const token = await this.getAccessToken();
@@ -261,7 +259,6 @@ export class MonnifyService {
       transactionReference,
       collectionChannel,
       card,
-      deviceInformation,
     };
     Object.keys(payload).forEach(
       (k) => payload[k] === undefined && delete payload[k],

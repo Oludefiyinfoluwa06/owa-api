@@ -173,16 +173,11 @@ export class WalletService {
       }
       case 'card': {
         const card = opts.card;
-        const deviceInformation = opts.deviceInformation;
         if (!card)
           throw new BadRequestException(
             'card details required for card payments',
           );
-        const resp = await this.monnify.chargeCard(
-          transactionReference,
-          card,
-          deviceInformation,
-        );
+        const resp = await this.monnify.chargeCard(transactionReference, card);
         await this.paymentService.updateMetadata(transactionReference, {
           ...resp.raw,
           method,

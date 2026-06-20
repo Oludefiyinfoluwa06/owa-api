@@ -53,7 +53,11 @@ export class DriversService {
     (user as any).idCardUrl = idRes.secure_url;
     (user as any).driversLicenseUrl = dlRes.secure_url;
 
-    return user.save();
+    const driver = await user.save();
+
+    const { passwordHash: _, ...rest } = driver.toObject();
+
+    return rest;
   }
 
   async updateDetails(
