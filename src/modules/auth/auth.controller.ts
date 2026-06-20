@@ -7,16 +7,18 @@ import { MessagingService } from '../messaging/messaging.service';
 import { CreateStudentDto } from './dto/create-student.dto';
 import { CreateDriverDto } from './dto/create-driver.dto';
 import { VerifyAccountDto } from './dto/verify-account.dto';
+import { ResendVerificationDto } from './dto/resend-verification.dto';
 import { LoginDto } from './dto/login.dto';
 import { PasswordRecoveryDto } from './dto/password-recovery.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
-
-// function generate4Digit() {
-//   return Math.floor(1000 + Math.random() * 9000).toString();
-// }
+import { VerifyEmailDto } from './dto/verify-email.dto';
 
 function generateRecoveryKey() {
   return Math.random().toString(36).slice(2, 10);
+}
+
+function generate4Digit() {
+  return Math.floor(1000 + Math.random() * 9000).toString();
 }
 
 @Controller('auth')
@@ -31,58 +33,71 @@ export class AuthController {
 
   @Post('register/student')
   async registerStudent(@Body() dto: CreateStudentDto) {
-    // const code = generate4Digit();
+    const code = generate4Digit();
     const created = await this.usersService.createUser({
       fullName: dto.fullName,
       email: dto.email,
       phone: dto.phone,
       password: dto.password,
       role: 'student',
-      verified: true,
-      verificationCode: null,
+      verified: false,
+      verificationCode: code,
     });
 
-    // await this.messagingService
-    //   .sendSms(created.phone, `Your verification code is ${code}`)
-    //   .catch((e) => {
-    //     console.error('Failed to send SMS verification', e);
-    //     this.mailService
-    //       .sendVerificationEmail(created.email, code)
-    //       .catch(() => {});
-    //   });
+    await this.mailService
+      .sendVerificationEmail(created.email, code)
+      .catch((e) => {
+        console.error('Failed to send verification email', e);
+      });
 
     return {
       id: created._id,
-      message: 'Registration successful',
+      message: 'Registration successful. Verification code sent to email.',
     };
   }
 
   @Post('register/driver')
   async registerDriver(@Body() dto: CreateDriverDto) {
-    // const code = generate4Digit();
+    const code = generate4Digit();
     const created = await this.usersService.createUser({
       fullName: dto.fullName,
       email: dto.email,
       phone: dto.phone,
       password: dto.password,
       role: 'driver',
-      verified: true,
-      verificationCode: null,
+      verified: false,
+      verificationCode: code,
     });
 
-    // send verification code to user's phone via SMS (Twilio)
-    // await this.messagingService
-    //   .sendSms(created.phone, `Your verification code is ${code}`)
-    //   .catch((e) => {
-    //     console.error('Failed to send SMS verification', e);
-    //     this.mailService
-    //       .sendVerificationEmail(created.email, code)
-    //       .catch(() => {});
-    //   });
+    await this.mailService
+      .sendVerificationEmail(created.email, code)
+      .catch((e) => {
+        console.error('Failed to send verification email', e);
+      });
 
     return {
       id: created._id,
-      message: 'Registration successful',
+      message: 'Registration successful. Verification code sent to email.',
+    };
+  }
+
+  @Post('verify/email')
+  async verifyByEmail(@Body() dto: VerifyEmailDto) {
+    const email = dto.email;
+    const code = dto.code;
+    const user = await this.usersService.verifyUserByEmail(email, code);
+    console.log({ user });
+
+    const wallet = await this.walletService
+      .createWalletForUser(String(user._id))
+      .catch(() => {});
+
+    console.log({ wallet });
+
+    const token = await this.authService.login(user);
+    return {
+      message: 'Account verified',
+      accessToken: token.accessToken,
     };
   }
 
@@ -100,6 +115,45 @@ export class AuthController {
     };
   }
 
+  @Post('verify/resend')
+  async resendVerification(@Body() dto: ResendVerificationDto) {
+    const code = generate4Digit();
+    if (dto.email) {
+      await this.usersService
+        .setVerificationCodeByEmail(dto.email, code)
+        .catch(() => {
+          throw new BadRequestException('User not found');
+        });
+      await this.mailService
+        .sendVerificationEmail(dto.email, code)
+        .catch((e) => {
+          console.error('Failed to send verification email', e);
+        });
+      return { message: 'Verification code resent to email' };
+    }
+
+    if (dto.phone) {
+      const user = await this.usersService.findByPhone(dto.phone);
+      if (!user) throw new BadRequestException('User not found');
+      await this.usersService.setVerificationCodeByPhone(dto.phone, code);
+      try {
+        await this.messagingService.sendSms(
+          dto.phone,
+          `Your verification code is ${code}`,
+        );
+      } catch (e) {
+        if (user.email) {
+          await this.mailService
+            .sendVerificationEmail(user.email, code)
+            .catch(() => {});
+        }
+      }
+      return { message: 'Verification code resent' };
+    }
+
+    throw new BadRequestException('email or phone is required');
+  }
+
   @Post('login')
   async login(@Body() dto: LoginDto) {
     const user = await this.authService.validateUser(dto.phone, dto.password);
@@ -114,7 +168,6 @@ export class AuthController {
     await this.mailService
       .sendRecoveryEmail(user.email, recoveryKey)
       .catch((e) => {
-        // eslint-disable-next-line no-console
         console.error('Failed to send recovery email', e);
       });
     return { message: 'Recovery key sent to email' };

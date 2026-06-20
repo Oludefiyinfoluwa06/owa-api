@@ -53,7 +53,11 @@ export class DriversService {
     (user as any).idCardUrl = idRes.secure_url;
     (user as any).driversLicenseUrl = dlRes.secure_url;
 
-    return user.save();
+    const driver = await user.save();
+
+    const { passwordHash: _, ...rest } = driver.toObject();
+
+    return rest;
   }
 
   async updateDetails(
@@ -67,7 +71,6 @@ export class DriversService {
     if (user.role !== 'driver')
       throw new BadRequestException('User is not a driver');
 
-    // If a file buffer is provided, upload to Cloudinary under driver/profile
     if (profileBuffer) {
       const folder = 'driver/profile';
       const uploadRes = await this.cloudinary.uploadBuffer(
@@ -78,7 +81,6 @@ export class DriversService {
       );
       user.profilePicture = uploadRes.secure_url;
     } else if (details.profilePicture) {
-      // allow existing URL via body
       user.profilePicture = details.profilePicture;
     }
 
