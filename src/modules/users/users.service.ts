@@ -153,7 +153,6 @@ export class UsersService {
     const user = await this.findById(userId);
     if (!user) throw new NotFoundException('User not found');
 
-    // Student-specific profile representation (include wallet details)
     if (user.role === 'student') {
       let walletDetails: any = null;
       try {
@@ -176,7 +175,6 @@ export class UsersService {
       };
     }
 
-    // Default user profile
     return {
       id: user._id,
       fullName: user.fullName,

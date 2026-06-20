@@ -20,7 +20,6 @@ export const WalletSchema = new Schema(
       index: true,
       unique: true,
     },
-    // hashed 4-digit PIN for wallet operations
     pinHash: { type: String },
     balance: { type: Number, default: 0 },
     accountNumber: { type: String },

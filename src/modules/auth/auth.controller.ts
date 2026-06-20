@@ -47,7 +47,6 @@ export class AuthController {
     await this.mailService
       .sendVerificationEmail(created.email, code)
       .catch((e) => {
-        // eslint-disable-next-line no-console
         console.error('Failed to send verification email', e);
       });
 
@@ -73,7 +72,6 @@ export class AuthController {
     await this.mailService
       .sendVerificationEmail(created.email, code)
       .catch((e) => {
-        // eslint-disable-next-line no-console
         console.error('Failed to send verification email', e);
       });
 
@@ -85,8 +83,6 @@ export class AuthController {
 
   @Post('verify/email')
   async verifyByEmail(@Body() dto: VerifyEmailDto) {
-    // Accept either VerifyEmailDto or plain body with email/code
-
     const email = dto.email;
     const code = dto.code;
     const user = await this.usersService.verifyUserByEmail(email, code);
@@ -122,7 +118,6 @@ export class AuthController {
   @Post('verify/resend')
   async resendVerification(@Body() dto: ResendVerificationDto) {
     const code = generate4Digit();
-    // prefer email if provided
     if (dto.email) {
       await this.usersService
         .setVerificationCodeByEmail(dto.email, code)
@@ -132,7 +127,6 @@ export class AuthController {
       await this.mailService
         .sendVerificationEmail(dto.email, code)
         .catch((e) => {
-          // eslint-disable-next-line no-console
           console.error('Failed to send verification email', e);
         });
       return { message: 'Verification code resent to email' };
@@ -142,14 +136,12 @@ export class AuthController {
       const user = await this.usersService.findByPhone(dto.phone);
       if (!user) throw new BadRequestException('User not found');
       await this.usersService.setVerificationCodeByPhone(dto.phone, code);
-      // attempt SMS then fallback to email
       try {
         await this.messagingService.sendSms(
           dto.phone,
           `Your verification code is ${code}`,
         );
       } catch (e) {
-        // fallback to email if available
         if (user.email) {
           await this.mailService
             .sendVerificationEmail(user.email, code)
@@ -176,7 +168,6 @@ export class AuthController {
     await this.mailService
       .sendRecoveryEmail(user.email, recoveryKey)
       .catch((e) => {
-        // eslint-disable-next-line no-console
         console.error('Failed to send recovery email', e);
       });
     return { message: 'Recovery key sent to email' };

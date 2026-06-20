@@ -12,7 +12,6 @@ export class AuthService {
   async validateUser(phone: string, password: string) {
     const user = await this.usersService.validateCredentials(phone, password);
     if (!user) return null;
-    // Do not return passwordHash
     const { passwordHash: _, ...result } = user.toObject();
     return result;
   }

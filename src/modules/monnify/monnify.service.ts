@@ -59,11 +59,9 @@ export class MonnifyService {
     const normalized = String(sig).trim();
     if (!normalized) return false;
 
-    // Accept either hex or base64 encoded signatures
     if (normalized === hex) return true;
     if (normalized === b64) return true;
 
-    // Sometimes header may be prefixed like "sha512=..."
     const maybe = normalized.replace(/^sha512=/i, '').replace(/^hmac=/i, '');
     if (maybe === hex || maybe === b64) return true;
     return false;
@@ -139,7 +137,6 @@ export class MonnifyService {
       metadata: { name: customer?.name, userId },
     };
 
-    // Remove undefined keys
     Object.keys(payload).forEach(
       (k) => payload[k] === undefined && delete payload[k],
     );
@@ -166,14 +163,13 @@ export class MonnifyService {
         throw e;
       }
     });
-    // return provider response plus our paymentReference so caller can track
+
     return {
       providerResponse: resp.data,
       paymentReference,
     };
   }
 
-  // Fetch list of banks (reference data)
   async getBanks(): Promise<any> {
     const token = await this.getAccessToken();
     const url = `${this.getBaseUrl()}/banks`;
@@ -198,7 +194,6 @@ export class MonnifyService {
     return resp.data?.responseBody || resp.data;
   }
 
-  // Initialize bank transfer / USSD payment - returns account details and/or USSD code
   async initBankPayment(transactionReference: string, bankCode: string) {
     const token = await this.getAccessToken();
     const url = `${this.getBaseUrl()}/merchant/bank-transfer/init-payment`;
@@ -227,7 +222,6 @@ export class MonnifyService {
     });
 
     const body = resp.data?.responseBody || resp.data;
-    // normalize expected fields: accountNumber, accountName, bankName, bankCode, ussdCode, paymentReference
     return {
       providerResponse: resp.data,
       accountNumber:
@@ -242,7 +236,6 @@ export class MonnifyService {
     };
   }
 
-  // Charge a card using Monnify cards charge endpoint
   async chargeCard(
     transactionReference: string,
     card: {
@@ -263,7 +256,7 @@ export class MonnifyService {
     Object.keys(payload).forEach(
       (k) => payload[k] === undefined && delete payload[k],
     );
-    // Mask card for logs
+
     const masked = { ...card, number: `****${card.number?.slice(-4)}` };
     this.logger.debug('Charging card', {
       url,
@@ -301,7 +294,6 @@ export class MonnifyService {
     };
   }
 
-  // Authorize card OTP
   async authorizeCardOtp(
     tokenId: string,
     token: string,
@@ -395,7 +387,6 @@ export class MonnifyService {
       }
     });
 
-    // Typical response contains accountNumber, accountName, bankName, bankCode, accountReference
     const body = resp.data?.responseBody || resp.data;
     const accountNumber =
       body?.accountNumber || body?.account_number || body?.accountNo;
@@ -414,7 +405,6 @@ export class MonnifyService {
   }
 
   async parseWebhook(payload: any) {
-    // Monnify structures vary; common fields: paymentReference, transactionReference, amountPaid, paymentStatus
     const providerReference =
       payload?.paymentReference ||
       payload?.transactionReference ||

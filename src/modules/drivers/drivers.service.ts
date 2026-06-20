@@ -71,7 +71,6 @@ export class DriversService {
     if (user.role !== 'driver')
       throw new BadRequestException('User is not a driver');
 
-    // If a file buffer is provided, upload to Cloudinary under driver/profile
     if (profileBuffer) {
       const folder = 'driver/profile';
       const uploadRes = await this.cloudinary.uploadBuffer(
@@ -82,7 +81,6 @@ export class DriversService {
       );
       user.profilePicture = uploadRes.secure_url;
     } else if (details.profilePicture) {
-      // allow existing URL via body
       user.profilePicture = details.profilePicture;
     }
 

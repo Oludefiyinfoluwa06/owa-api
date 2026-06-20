@@ -76,7 +76,6 @@ export class WalletService {
     if (Number(senderWallet.balance) < amount)
       throw new BadRequestException('Insufficient funds');
 
-    // perform balance updates
     await this.walletModel.findByIdAndUpdate(senderWallet._id, {
       $inc: { balance: -amount },
     });
@@ -84,7 +83,6 @@ export class WalletService {
       $inc: { balance: amount },
     });
 
-    // create transaction records: DEBIT for sender, TOPUP for receiver
     await this.transactionService.createTransaction({
       type: 'DEBIT',
       userId: fromUserId,
@@ -126,13 +124,10 @@ export class WalletService {
   ) {
     if (amount <= 0) throw new BadRequestException('Amount must be positive');
 
-    // get user customer info (user is stored in Users collection)
-    // we only reference userId (MongoDB _id) here; caller should supply valid ObjectId string
     const customer = { name: userId, email: `${userId}@example.com` };
 
     const wallet = await this.walletModel.findOne({ userId }).lean();
 
-    // initialize transaction with provider
     const init = await this.monnify.initializeTransaction(
       userId,
       amount,
@@ -142,7 +137,6 @@ export class WalletService {
     const transactionReference =
       init.providerResponse.responseBody.transactionReference;
 
-    // persist pending payment
     await this.paymentService.createPending({
       provider: 'MONNIFY',
       providerReference: transactionReference,
@@ -151,7 +145,6 @@ export class WalletService {
       metadata: { method },
     });
 
-    // Branch by method
     switch (method) {
       case 'bank':
       case 'ussd': {
@@ -164,7 +157,7 @@ export class WalletService {
           transactionReference,
           bankCode,
         );
-        // attach provider data to payment
+
         await this.paymentService.updateMetadata(transactionReference, {
           ...resp.raw,
           method,
@@ -195,7 +188,6 @@ export class WalletService {
     tokenId: string,
     token: string,
   ) {
-    // transactionReference corresponds to our payment.providerReference
     if (!tokenId || !token)
       throw new BadRequestException('tokenId and token are required');
 
@@ -210,7 +202,6 @@ export class WalletService {
     }
 
     const resp = await this.monnify.authorizeCardOtp(tokenId, token, txRef);
-    // persist provider response
     if (txRef) {
       await this.paymentService.updateMetadata(txRef, {
         ...(payment?.metadata || {}),
@@ -218,10 +209,8 @@ export class WalletService {
       });
     }
 
-    // if provider indicates success, credit wallet
     const providerRef = resp.providerReference || txRef;
     if (resp.status && String(resp.status).toUpperCase().includes('SUCCESS')) {
-      // find payment to get userId and amount
       const p = txRef
         ? payment
         : await this.paymentService.findByProviderReference(providerRef);
@@ -245,7 +234,6 @@ export class WalletService {
     const existing = await this.walletModel.findOne({ userId }).lean();
     if (existing) return existing;
 
-    // If caller requests to skip provider (development/testing), create local wallet first and try provider non-blocking
     if (skipProvider) {
       const wallet = await this.walletModel.create({ userId });
       try {
@@ -274,7 +262,6 @@ export class WalletService {
       return wallet;
     }
 
-    // Strict path: require provider reserved account first, then persist local wallet with provider details
     this.logger.debug(
       'Creating provider reserved account before local wallet for',
       userId,
@@ -327,7 +314,7 @@ export class WalletService {
         { new: true },
       )
       .lean();
-    // create transaction record for TOPUP
+
     await this.transactionService.createTransaction({
       type: 'TOPUP',
       userId,
@@ -352,7 +339,7 @@ export class WalletService {
         { new: true },
       )
       .lean();
-    // create transaction record for DEBIT
+
     await this.transactionService.createTransaction({
       type: 'DEBIT',
       userId,
@@ -363,7 +350,6 @@ export class WalletService {
   }
 
   async deposit(userId: string, amount: number) {
-    // keep method name for compatibility but delegate to Monnify
     const customer = { name: userId, email: `${userId}@example.com` };
     const init = await this.monnify.initializeTransaction(
       userId,
@@ -371,7 +357,6 @@ export class WalletService {
       customer,
     );
 
-    // record a pending payment in DB to allow idempotent webhook handling
     await this.paymentService.createPending({
       provider: 'MONNIFY',
       providerReference: init.paymentReference,
@@ -390,7 +375,7 @@ export class WalletService {
   ) {
     if (!providerReference)
       throw new BadRequestException('Missing provider reference');
-    // Mark payment as success (creates if missing)
+
     const payment = await this.paymentService.markSuccess(
       providerReference,
       amount,
@@ -398,10 +383,8 @@ export class WalletService {
       userId,
     );
 
-    // credit the wallet
     await this.credit(userId, amount);
 
-    // create transaction linked to payment
     const wallet = await this.walletModel.findOne({ userId }).lean();
     if (wallet) {
       await this.transactionService.createTransaction({
