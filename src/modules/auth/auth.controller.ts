@@ -13,10 +13,6 @@ import { PasswordRecoveryDto } from './dto/password-recovery.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { VerifyEmailDto } from './dto/verify-email.dto';
 
-// function generate4Digit() {
-//   return Math.floor(1000 + Math.random() * 9000).toString();
-// }
-
 function generateRecoveryKey() {
   return Math.random().toString(36).slice(2, 10);
 }
