@@ -8,15 +8,11 @@ export interface User {
   passwordHash: string;
   role: 'student' | 'driver';
   verified: boolean;
-  verificationCode?: string; // 4-digit code
+  verificationCode?: string;
   recoveryKey?: string;
-
-  // Driver-specific
   profilePicture?: string;
   driverTagNumber?: string;
   vehicleType?: VehicleType;
-
-  // Banking
   bankName?: string;
   accountNumber?: string;
 }

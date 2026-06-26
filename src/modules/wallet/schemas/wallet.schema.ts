@@ -3,6 +3,7 @@ import { Schema, Document } from 'mongoose';
 export interface WalletDocument extends Document {
   userId: any;
   balance: number;
+  pinHash?: string;
   accountNumber?: string;
   accountName?: string;
   bankName?: string;
@@ -12,7 +13,14 @@ export interface WalletDocument extends Document {
 
 export const WalletSchema = new Schema(
   {
-    userId: { type: Schema.Types.ObjectId, required: true, ref: 'User', index: true, unique: true },
+    userId: {
+      type: Schema.Types.ObjectId,
+      required: true,
+      ref: 'User',
+      index: true,
+      unique: true,
+    },
+    pinHash: { type: String },
     balance: { type: Number, default: 0 },
     accountNumber: { type: String },
     accountName: { type: String },

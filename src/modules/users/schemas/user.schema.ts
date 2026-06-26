@@ -35,6 +35,9 @@ export const UserSchema = new Schema(
     bankName: { type: String },
     accountNumber: { type: String },
     bankCode: { type: String },
+    plateNumber: { type: String },
+    idCardUrl: { type: String },
+    driversLicenseUrl: { type: String },
   },
   { timestamps: true },
 );

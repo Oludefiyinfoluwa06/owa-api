@@ -12,14 +12,13 @@ export class AuthService {
   async validateUser(phone: string, password: string) {
     const user = await this.usersService.validateCredentials(phone, password);
     if (!user) return null;
-    // Do not return passwordHash
-    const { passwordHash: _, ...result } = user as any;
+    const { passwordHash: _, ...result } = user.toObject();
     return result;
   }
 
   async login(user: any) {
     if (!user) throw new UnauthorizedException();
-    const payload = { sub: user.id, phone: user.phone, role: user.role };
+    const payload = { sub: user._id, phone: user.phone, role: user.role };
     return {
       accessToken: this.jwtService.sign(payload),
     };
