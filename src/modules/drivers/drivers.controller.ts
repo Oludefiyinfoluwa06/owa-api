@@ -7,6 +7,9 @@ import {
   UploadedFiles,
   UploadedFile,
   Body,
+  Param,
+  Req,
+  Headers,
 } from '@nestjs/common';
 import {
   FileFieldsInterceptor,
@@ -62,6 +65,27 @@ export class DriversController {
       driversLicenseFile.buffer,
       driversLicenseFile.originalname,
     );
+  }
+
+  @Post(':userId/verify-documents')
+  @UseGuards(JwtAuthGuard)
+  async verifyDocuments(@Param('userId') userId: string) {
+    return this.driversService.verifyIdentityDocuments(userId);
+  }
+
+  @Post(':userId/verify-identity')
+  @UseGuards(JwtAuthGuard)
+  async createDiditVerificationSession(@Param('userId') userId: string) {
+    return this.driversService.createDiditSession(userId);
+  }
+
+  @Post('webhooks/didit')
+  async diditWebhook(
+    @Req() req: any,
+    @Headers('x-signature-v2') signature: string,
+    @Headers('x-timestamp') timestamp: string,
+  ) {
+    return this.driversService.handleDiditWebhook(req, signature, timestamp);
   }
 
   @Post('details')

@@ -24,4 +24,10 @@ export const envConfig = () => ({
     pass: process.env.MAIL_PASS,
     from: process.env.MAIL_FROM,
   },
+  didit: {
+    apiKey: process.env.DIDIT_API_KEY,
+    webhookSecret: process.env.DIDIT_WEBHOOK_SECRET,
+    workflowId: process.env.DIDIT_WORKFLOW_ID,
+    callbackUrl: process.env.DIDIT_CALLBACK_URL,
+  },
 });

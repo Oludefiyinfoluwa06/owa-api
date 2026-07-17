@@ -10,6 +10,8 @@ import { Model } from 'mongoose';
 import * as bcrypt from 'bcryptjs';
 import { UserDocument } from './schemas/user.schema';
 import { WalletService } from '../wallet/wallet.service';
+import { CloudinaryService } from '../../common/cloudinary/cloudinary.service';
+import * as QRCode from 'qrcode';
 
 @Injectable()
 export class UsersService {
@@ -17,6 +19,7 @@ export class UsersService {
     @InjectModel('User') private userModel: Model<UserDocument>,
     @Inject(forwardRef(() => WalletService))
     private walletService: WalletService,
+    private cloudinary: CloudinaryService,
   ) {}
 
   private async hashPassword(password: string) {
@@ -124,8 +127,31 @@ export class UsersService {
     if (user.role !== 'driver')
       throw new BadRequestException('User is not a driver');
     if (details.profilePicture) user.profilePicture = details.profilePicture;
-    if (details.driverTagNumber) user.driverTagNumber = details.driverTagNumber;
+    if (details.driverTagNumber) {
+      const tag = details.driverTagNumber;
+      // ensure uniqueness
+      const existing = await this.findByDriverTagNumber(tag);
+      if (existing && String(existing._id) !== String(user._id))
+        throw new BadRequestException('driverTagNumber already in use');
+
+      user.driverTagNumber = tag;
+
+      try {
+        const pngBuffer: Buffer = await QRCode.toBuffer(tag, { type: 'png' });
+        const uploadRes = await this.cloudinary.uploadBuffer(
+          pngBuffer,
+          `${user._id}_driver_qr`,
+          'drivers/qr',
+          'image',
+        );
+        (user as any).qrUrl = uploadRes.secure_url;
+      } catch (e) {
+        console.error('Failed to generate or upload QR', e);
+      }
+    }
+
     if (details.vehicleType) user.vehicleType = details.vehicleType as any;
+
     return user.save();
   }
 
@@ -216,6 +242,11 @@ export class UsersService {
       bankCode: user.bankCode,
       idCardUrl: (user as any).idCardUrl,
       driversLicenseUrl: (user as any).driversLicenseUrl,
+      idCardVerified: user.idCardVerified ?? false,
+      driversLicenseVerified: user.driversLicenseVerified ?? false,
+      verificationSessionId: (user as any).verificationSessionId,
+      verificationStatus: (user as any).verificationStatus || 'Not Started',
+      identityVerificationStatus: (user as any).identityVerificationStatus || 'pending',
       verified: user.verified,
       role: user.role,
       wallet: walletInfo,
