@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Controller,
   Get,
   Post,
@@ -7,9 +8,9 @@ import {
   UploadedFiles,
   UploadedFile,
   Body,
-  Param,
   Req,
   Headers,
+  Param,
 } from '@nestjs/common';
 import {
   FileFieldsInterceptor,
@@ -31,6 +32,12 @@ export class DriversController {
   @UseGuards(JwtAuthGuard)
   async profile(@AuthUser() user: any) {
     return this.driversService.getProfile(user.userId);
+  }
+
+  @Get('lookup/:tag')
+  @UseGuards(JwtAuthGuard)
+  async lookupByTag(@Param('tag') tag: string) {
+    return this.driversService.lookupByTag(tag);
   }
 
   @Post('onboard')
@@ -56,6 +63,12 @@ export class DriversController {
     const idCardFile = files.idCard && files.idCard[0];
     const driversLicenseFile = files.driversLicense && files.driversLicense[0];
 
+    if (!idCardFile || !driversLicenseFile) {
+      throw new BadRequestException(
+        'idCard and driversLicense files are both required',
+      );
+    }
+
     return this.driversService.onboard(
       user.userId,
       body.vehicleType,
@@ -67,16 +80,16 @@ export class DriversController {
     );
   }
 
-  @Post(':userId/verify-documents')
+  @Post('verify-identity')
   @UseGuards(JwtAuthGuard)
-  async verifyDocuments(@Param('userId') userId: string) {
-    return this.driversService.verifyIdentityDocuments(userId);
+  async createDiditVerificationSession(@AuthUser() user: any) {
+    return this.driversService.createDiditSession(user.userId);
   }
 
-  @Post(':userId/verify-identity')
+  @Get('verify-identity/status')
   @UseGuards(JwtAuthGuard)
-  async createDiditVerificationSession(@Param('userId') userId: string) {
-    return this.driversService.createDiditSession(userId);
+  async checkVerificationStatus(@AuthUser() user: any) {
+    return this.driversService.checkVerificationStatus(user.userId);
   }
 
   @Post('webhooks/didit')

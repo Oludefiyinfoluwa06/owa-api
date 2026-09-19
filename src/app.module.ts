@@ -12,6 +12,9 @@ import { TransactionModule } from './modules/transaction/transaction.module';
 import { PaymentModule } from './modules/payment/payment.module';
 import { DriversModule } from './modules/drivers/drivers.module';
 import { CloudinaryModule } from './common/cloudinary/cloudinary.module';
+import { TripsModule } from './modules/trips/trips.module';
+import { NotificationsModule } from './modules/notifications/notifications.module';
+import { ActivityLogModule } from './modules/activity-log/activity-log.module';
 
 @Module({
   imports: [
@@ -35,6 +38,9 @@ import { CloudinaryModule } from './common/cloudinary/cloudinary.module';
     PaymentModule,
     DriversModule,
     CloudinaryModule,
+    TripsModule,
+    NotificationsModule,
+    ActivityLogModule,
   ],
   controllers: [AppController],
   providers: [AppService],

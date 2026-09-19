@@ -29,5 +29,9 @@ export const envConfig = () => ({
     webhookSecret: process.env.DIDIT_WEBHOOK_SECRET,
     workflowId: process.env.DIDIT_WORKFLOW_ID,
     callbackUrl: process.env.DIDIT_CALLBACK_URL,
+    baseUrl: process.env.DIDIT_BASE_URL,
+  },
+  otp: {
+    bypassCode: process.env.OTP_BYPASS_CODE,
   },
 });

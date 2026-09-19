@@ -1,7 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
-import { TransactionDocument } from '../wallet/schemas/transaction.schema';
+import {
+  TransactionDocument,
+  TransactionType,
+} from '../wallet/schemas/transaction.schema';
 
 @Injectable()
 export class TransactionService {
@@ -13,13 +16,25 @@ export class TransactionService {
 
   async createTransaction(
     payload: Partial<TransactionDocument> & {
-      type: 'TOPUP' | 'DEBIT' | 'ADJUSTMENT' | 'TRANSFER';
+      type: TransactionType;
       userId: string;
       walletId: string;
       amount: number;
     },
   ) {
     return this.transactionModel.create(payload as any);
+  }
+
+  async updateStatus(
+    transactionId: string,
+    status: 'PENDING' | 'SUCCESS' | 'FAILED',
+    extra?: Partial<TransactionDocument>,
+  ) {
+    return this.transactionModel.findByIdAndUpdate(
+      transactionId,
+      { $set: { status, ...extra } },
+      { new: true },
+    );
   }
   async findByWalletId(walletId: string, page = 1, limit = 20) {
     const skip = (page - 1) * limit;

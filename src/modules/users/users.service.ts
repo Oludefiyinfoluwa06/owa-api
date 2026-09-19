@@ -62,10 +62,22 @@ export class UsersService {
     return await this.userModel.findOne({ email });
   }
 
+  /**
+   * Lets a fixed code (OTP_BYPASS_CODE) verify any account outside production,
+   * so QA/frontend testing isn't blocked on inbox access to real OTP emails/SMS.
+   * Gated on NODE_ENV as well so it stays inert even if the env var leaks into prod.
+   */
+  private isOtpBypassCode(code: string) {
+    const bypassCode = process.env.OTP_BYPASS_CODE;
+    return (
+      process.env.NODE_ENV !== 'production' && !!bypassCode && code === bypassCode
+    );
+  }
+
   async verifyUser(phone: string, code: string) {
     const user = await this.findByPhone(phone);
     if (!user) throw new NotFoundException('User not found');
-    if (user.verificationCode !== code)
+    if (user.verificationCode !== code && !this.isOtpBypassCode(code))
       throw new BadRequestException('Invalid code');
     user.verified = true;
     user.verificationCode = undefined;
@@ -75,7 +87,7 @@ export class UsersService {
   async verifyUserByEmail(email: string, code: string) {
     const user = await this.findByEmail(email);
     if (!user) throw new NotFoundException('User not found');
-    if (user.verificationCode !== code)
+    if (user.verificationCode !== code && !this.isOtpBypassCode(code))
       throw new BadRequestException('Invalid code');
     user.verified = true;
     user.verificationCode = undefined;
@@ -160,6 +172,7 @@ export class UsersService {
     bankName: string,
     accountNumber: string,
     bankCode?: string,
+    accountName?: string,
   ) {
     const user = await this.findByPhone(phone);
     if (!user) throw new NotFoundException('User not found');
@@ -168,11 +181,28 @@ export class UsersService {
     user.bankName = bankName;
     user.accountNumber = accountNumber;
     if (bankCode) user.bankCode = bankCode;
+    user.accountName = accountName;
     return user.save();
   }
 
   async findByDriverTagNumber(tag: string) {
     return await this.userModel.findOne({ driverTagNumber: tag });
+  }
+
+  async getPublicDriverByTag(tag: string) {
+    const driver = await this.findByDriverTagNumber(tag);
+    if (!driver || driver.role !== 'driver')
+      throw new NotFoundException('Driver not found');
+
+    return {
+      id: driver._id,
+      fullName: driver.fullName,
+      profilePicture: driver.profilePicture,
+      vehicleType: driver.vehicleType,
+      plateNumber: (driver as any).plateNumber,
+      driverTagNumber: driver.driverTagNumber,
+      verified: driver.verified,
+    };
   }
 
   async getProfile(userId: string) {
@@ -240,6 +270,7 @@ export class UsersService {
       bankName: user.bankName,
       accountNumber: user.accountNumber,
       bankCode: user.bankCode,
+      accountName: user.accountName,
       idCardUrl: (user as any).idCardUrl,
       driversLicenseUrl: (user as any).driversLicenseUrl,
       idCardVerified: user.idCardVerified ?? false,

@@ -1,4 +1,4 @@
-import { IsNotEmpty, IsOptional } from 'class-validator';
+import { IsNotEmpty } from 'class-validator';
 
 export class DriverBankDto {
   @IsNotEmpty()
@@ -7,6 +7,8 @@ export class DriverBankDto {
   @IsNotEmpty()
   accountNumber: string;
 
-  @IsOptional()
-  bankCode?: string;
+  // Required: withdrawal can't resolve/disburse without it, so bank details
+  // saved without a bankCode would only fail confusingly later, at payout time.
+  @IsNotEmpty()
+  bankCode: string;
 }

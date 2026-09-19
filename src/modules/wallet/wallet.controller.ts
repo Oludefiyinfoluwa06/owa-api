@@ -2,6 +2,9 @@ import { Controller, Get, Post, Body, UseGuards, Query } from '@nestjs/common';
 import { WalletService } from './wallet.service';
 import { JwtAuthGuard } from '../auth/guard/jwt-auth.guard';
 import { AuthUser } from '../../common/decorators/auth-user.decorator';
+import { WithdrawDto } from './dto/withdraw.dto';
+import { TopupDto } from './dto/topup.dto';
+import { AuthorizeCardOtpDto } from './dto/authorize-card-otp.dto';
 
 @Controller('wallet')
 export class WalletController {
@@ -32,34 +35,33 @@ export class WalletController {
 
   @UseGuards(JwtAuthGuard)
   @Post('topup')
-  async topup(
-    @AuthUser() user: any,
-    @Body()
-    body: {
-      amount: number;
-      method: 'bank' | 'ussd' | 'card';
-      opts?: any;
-    },
-  ) {
+  async topup(@AuthUser() user: any, @Body() body: TopupDto) {
     const userId = String(user.userId);
     const { amount, method, opts } = body;
     return this.walletService.topUp(userId, amount, method, opts || {});
   }
 
+  @UseGuards(JwtAuthGuard)
   @Post('authorize-card-otp')
   async authorizeCardOtp(
-    @Body()
-    body: {
-      transactionReference?: string;
-      tokenId: string;
-      token: string;
-    },
+    @AuthUser() user: any,
+    @Body() body: AuthorizeCardOtpDto,
   ) {
     return this.walletService.authorizeCardOtp(
+      String(user.userId),
       body.transactionReference,
       body.tokenId,
       body.token,
     );
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('resolve-account')
+  async resolveAccount(
+    @Query('accountNumber') accountNumber: string,
+    @Query('bankCode') bankCode: string,
+  ) {
+    return this.walletService.resolveAccountName(accountNumber, bankCode);
   }
 
   @UseGuards(JwtAuthGuard)
@@ -68,6 +70,13 @@ export class WalletController {
     const userId = String(user.userId);
     const { amount } = body;
     return this.walletService.debit(userId, amount);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('withdraw')
+  async withdraw(@AuthUser() user: any, @Body() body: WithdrawDto) {
+    const userId = String(user.userId);
+    return this.walletService.withdraw(userId, body.amount, body.pin);
   }
 
   @UseGuards(JwtAuthGuard)

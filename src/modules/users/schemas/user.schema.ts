@@ -18,6 +18,7 @@ export interface UserDocument extends Document {
   bankName?: string;
   accountNumber?: string;
   bankCode?: string;
+  accountName?: string;
   idCardVerified?: boolean;
   driversLicenseVerified?: boolean;
   verificationSessionId?: string;
@@ -44,6 +45,7 @@ export const UserSchema = new Schema(
     bankName: { type: String },
     accountNumber: { type: String },
     bankCode: { type: String },
+    accountName: { type: String },
     plateNumber: { type: String },
     idCardUrl: { type: String },
     driversLicenseUrl: { type: String },

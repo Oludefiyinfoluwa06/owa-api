@@ -12,10 +12,13 @@ import { Request } from 'express';
 import { CloudinaryService } from '../../common/cloudinary/cloudinary.service';
 import { UsersService } from '../users/users.service';
 import { WalletService } from '../wallet/wallet.service';
+import { NotificationsService } from '../notifications/notifications.service';
+import { ActivityLogService } from '../activity-log/activity-log.service';
 import {
   ProcessedEvent,
   ProcessedEventDocument,
 } from './schemas/processed-event.schema';
+import { DriverBankDto } from './dto/driver-bank.dto';
 
 @Injectable()
 export class DriversService {
@@ -24,12 +27,18 @@ export class DriversService {
     private usersService: UsersService,
     private walletService: WalletService,
     private configService: ConfigService,
+    private notificationsService: NotificationsService,
+    private activityLogService: ActivityLogService,
     @InjectModel(ProcessedEvent.name)
     private processedEventModel: Model<ProcessedEventDocument>,
   ) {}
 
   async getProfile(id: string) {
     return this.usersService.getDriverProfile(id);
+  }
+
+  async lookupByTag(tag: string) {
+    return this.usersService.getPublicDriverByTag(tag);
   }
 
   async onboard(
@@ -71,13 +80,23 @@ export class DriversService {
     try {
       await this.createDiditSession(userId);
     } catch (error) {
-      (driver as any).identityVerificationStatus = 'In Review';
-      (driver as any).identityVerificationMessage =
+      await this.setIdentityStatus(
+        driver,
+        'In Review',
         error instanceof Error
           ? error.message
-          : 'Didit session creation failed';
-      await driver.save().catch(() => undefined);
+          : 'Didit session creation failed',
+      );
     }
+
+    await this.activityLogService
+      .log(
+        userId,
+        'DRIVER_ONBOARDING_SUBMITTED',
+        'Driver onboarding documents submitted',
+        { vehicleType, plateNumber },
+      )
+      .catch(() => undefined);
 
     const { passwordHash: _, ...rest } = driver.toObject();
 
@@ -114,56 +133,54 @@ export class DriversService {
     return user.save();
   }
 
-  async updateBank(phone: string, bankDto: any) {
+  async updateBank(phone: string, bankDto: DriverBankDto) {
+    // Reject a bad/unresolvable account at save time instead of leaving the
+    // driver to discover it only when a withdrawal fails.
+    const resolved = await this.walletService.resolveAccountName(
+      bankDto.accountNumber,
+      bankDto.bankCode,
+    );
     return this.usersService.addBankDetails(
       phone,
       bankDto.bankName,
       bankDto.accountNumber,
       bankDto.bankCode,
+      resolved.accountName,
     );
   }
 
-  async verifyIdentityDocuments(userId: string) {
-    const user = await this.usersService.findById(userId);
-    if (!user) throw new NotFoundException('User not found');
-    if (user.role !== 'driver')
-      throw new BadRequestException('User is not a driver');
-
-    const idCardUrl = (user as any).idCardUrl;
-    const driversLicenseUrl = (user as any).driversLicenseUrl;
-
-    if (!idCardUrl || !driversLicenseUrl) {
-      throw new BadRequestException(
-        'National ID card and driver license documents are required before verification',
-      );
-    }
-
-    const verificationResult = await this.callThirdPartyVerification({
-      userId,
-      nationalIdUrl: idCardUrl,
-      driversLicenseUrl,
-    });
-
-    const isVerified = verificationResult.status === 'verified';
-    user.idCardVerified =
-      verificationResult.idCardStatus === 'verified' || isVerified;
-    user.driversLicenseVerified =
-      verificationResult.driversLicenseStatus === 'verified' || isVerified;
-    (user as any).identityVerificationStatus = verificationResult.status;
-    (user as any).identityVerificationMessage = verificationResult.message;
-    (user as any).identityVerificationCheckedAt = new Date();
-
+  private async setIdentityStatus(
+    user: any,
+    status: string,
+    message?: string,
+  ) {
+    user.identityVerificationStatus = status;
+    if (message !== undefined) user.identityVerificationMessage = message;
+    user.identityVerificationCheckedAt = new Date();
+    user.verificationStatus = status;
+    if (status === 'Approved') user.verified = true;
     await user.save();
 
-    return {
-      id: user._id,
-      userId,
-      status: verificationResult.status,
-      service: verificationResult.service,
-      idCardVerified: user.idCardVerified,
-      driversLicenseVerified: user.driversLicenseVerified,
-      message: verificationResult.message,
-    };
+    await this.notificationsService
+      .create(
+        String(user._id),
+        'IDENTITY_VERIFICATION',
+        'Identity verification update',
+        message || `Your identity verification status is now ${status}`,
+        { status },
+      )
+      .catch(() => undefined);
+
+    await this.activityLogService
+      .log(
+        String(user._id),
+        'IDENTITY_VERIFICATION_UPDATED',
+        `Identity verification status updated to ${status}`,
+        { status },
+      )
+      .catch(() => undefined);
+
+    return user;
   }
 
   async createDiditSession(userId: string) {
@@ -207,15 +224,66 @@ export class DriversService {
     const session = data.session || data;
 
     user.verificationSessionId = session.id || session.session_id;
-    (user as any).identityVerificationStatus = 'In Progress';
-    (user as any).identityVerificationMessage =
-      'Didit verification session created';
-    await user.save();
+    await this.setIdentityStatus(
+      user,
+      'In Progress',
+      'Didit verification session created',
+    );
 
     return {
       verificationUrl: session.url,
       sessionToken: session.session_token,
       sessionId: user.verificationSessionId,
+    };
+  }
+
+  async checkVerificationStatus(userId: string) {
+    const user = await this.usersService.findById(userId);
+    if (!user) throw new NotFoundException('User not found');
+    if (user.role !== 'driver')
+      throw new BadRequestException('User is not a driver');
+
+    const sessionId = (user as any).verificationSessionId;
+    if (!sessionId) {
+      throw new BadRequestException(
+        'No verification session has been started for this driver',
+      );
+    }
+
+    const apiKey = this.configService.get<string>('didit.apiKey');
+    const baseUrl = this.configService.get<string>('didit.baseUrl');
+    if (!apiKey || !baseUrl) {
+      throw new BadRequestException(
+        'Didit identity verification is not configured yet',
+      );
+    }
+
+    const response = await fetch(
+      `${baseUrl}/v3/session/${sessionId}/decision/`,
+      {
+        method: 'GET',
+        headers: { 'x-api-key': apiKey },
+      },
+    );
+
+    if (!response.ok) {
+      const errorBody = await response.text();
+      throw new BadRequestException(
+        `Didit status check failed: ${errorBody || response.statusText}`,
+      );
+    }
+
+    const data = await response.json();
+    const status = this.normalizeDiditStatus(data.status);
+    await this.setIdentityStatus(
+      user,
+      status,
+      `Didit status refreshed to ${status}`,
+    );
+
+    return {
+      status,
+      identityVerificationStatus: (user as any).identityVerificationStatus,
     };
   }
 
@@ -340,15 +408,11 @@ export class DriversService {
     }
 
     const diditStatus = this.normalizeDiditStatus(status);
-    (user as any).identityVerificationStatus = diditStatus;
-    (user as any).identityVerificationMessage =
-      `Didit status updated to ${diditStatus}`;
-    (user as any).identityVerificationCheckedAt = new Date();
-    user.verified = diditStatus === 'Approved';
-    user.verificationStatus = diditStatus;
-    user.verificationSessionId =
-      (user as any).verificationSessionId || undefined;
-    await user.save();
+    await this.setIdentityStatus(
+      user,
+      diditStatus,
+      `Didit status updated to ${diditStatus}`,
+    );
 
     await this.processedEventModel.create({
       eventId,
@@ -398,62 +462,4 @@ export class DriversService {
     return value;
   }
 
-  private async callThirdPartyVerification(payload: Record<string, unknown>) {
-    const provider =
-      this.configService.get<string>('identityVerification.provider') || 'mock';
-    const baseUrl = this.configService.get<string>(
-      'identityVerification.baseUrl',
-    );
-    const apiKey = this.configService.get<string>(
-      'identityVerification.apiKey',
-    );
-
-    if (!baseUrl || provider === 'mock') {
-      return {
-        status: 'pending',
-        service: 'mock',
-        message:
-          'No third-party verification service is configured yet. Verification is queued for manual review.',
-        idCardStatus: 'pending',
-        driversLicenseStatus: 'pending',
-      };
-    }
-
-    const response = await fetch(baseUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
-      },
-      body: JSON.stringify(payload),
-    });
-
-    if (!response.ok) {
-      const errorBody = await response.text();
-      throw new BadRequestException(
-        `Identity verification failed: ${errorBody || response.statusText}`,
-      );
-    }
-
-    const data = await response.json().catch(() => ({}));
-
-    return {
-      status: data.status || 'pending',
-      service: provider,
-      message:
-        data.message || 'Identity documents were submitted for verification.',
-      idCardStatus:
-        data.idCardStatus ||
-        data.nationalIdStatus ||
-        data.idCard ||
-        data.status ||
-        'pending',
-      driversLicenseStatus:
-        data.driversLicenseStatus ||
-        data.licenseStatus ||
-        data.driversLicense ||
-        data.status ||
-        'pending',
-    };
-  }
 }
