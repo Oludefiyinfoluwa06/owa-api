@@ -10,6 +10,7 @@ import { JwtStrategy } from './strategy/jwt.strategy';
 import { MailModule } from '../mail/mail.module';
 import { MessagingModule } from '../messaging/messaging.module';
 import { WalletModule } from '../wallet/wallet.module';
+import { ActivityLogModule } from '../activity-log/activity-log.module';
 
 @Module({
   imports: [
@@ -18,6 +19,7 @@ import { WalletModule } from '../wallet/wallet.module';
     MailModule,
     MessagingModule,
     WalletModule,
+    ActivityLogModule,
     PassportModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],

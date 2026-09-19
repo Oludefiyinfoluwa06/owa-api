@@ -1,7 +1,16 @@
 import { Schema, Document } from 'mongoose';
 
+export type TransactionType =
+  | 'TOPUP'
+  | 'DEBIT'
+  | 'ADJUSTMENT'
+  | 'TRANSFER'
+  | 'WITHDRAWAL'
+  | 'TRIP_PAYMENT';
+
 export interface TransactionDocument extends Document {
-  type: 'TOPUP' | 'DEBIT' | 'ADJUSTMENT' | 'TRANSFER';
+  type: TransactionType;
+  status: 'PENDING' | 'SUCCESS' | 'FAILED';
   userId: any;
   walletId: any;
   amount: number;
@@ -10,11 +19,21 @@ export interface TransactionDocument extends Document {
   metadata?: any;
   toUserId?: any;
   toWalletId?: any;
+  tripId?: any;
 }
 
 export const TransactionSchema = new Schema(
   {
-    type: { type: String, enum: ['TOPUP', 'DEBIT', 'ADJUSTMENT', 'TRANSFER'], required: true },
+    type: {
+      type: String,
+      enum: ['TOPUP', 'DEBIT', 'ADJUSTMENT', 'TRANSFER', 'WITHDRAWAL', 'TRIP_PAYMENT'],
+      required: true,
+    },
+    status: {
+      type: String,
+      enum: ['PENDING', 'SUCCESS', 'FAILED'],
+      default: 'SUCCESS',
+    },
     userId: { type: Schema.Types.ObjectId, required: true, ref: 'User', index: true },
     walletId: { type: Schema.Types.ObjectId, required: true, ref: 'Wallet', index: true },
     amount: { type: Number, required: true },
@@ -23,6 +42,7 @@ export const TransactionSchema = new Schema(
     metadata: { type: Schema.Types.Mixed },
     toUserId: { type: Schema.Types.ObjectId, ref: 'User' },
     toWalletId: { type: Schema.Types.ObjectId, ref: 'Wallet' },
+    tripId: { type: Schema.Types.ObjectId, ref: 'Trip', index: true },
   },
   { timestamps: true },
 );

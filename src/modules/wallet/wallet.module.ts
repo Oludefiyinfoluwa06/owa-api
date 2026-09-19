@@ -7,13 +7,17 @@ import { MonnifyModule } from '../monnify/monnify.module';
 import { PaymentModule } from '../payment/payment.module';
 import { TransactionModule } from '../transaction/transaction.module';
 import { UsersModule } from '../users/users.module';
+import { NotificationsModule } from '../notifications/notifications.module';
+import { ActivityLogModule } from '../activity-log/activity-log.module';
 
 @Module({
   imports: [
     MongooseModule.forFeature([{ name: 'Wallet', schema: WalletSchema }]),
     PaymentModule,
     TransactionModule,
-    MonnifyModule,
+    forwardRef(() => MonnifyModule),
+    NotificationsModule,
+    ActivityLogModule,
     forwardRef(() => UsersModule),
   ],
   controllers: [WalletController],

@@ -12,6 +12,7 @@ import { LoginDto } from './dto/login.dto';
 import { PasswordRecoveryDto } from './dto/password-recovery.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { VerifyEmailDto } from './dto/verify-email.dto';
+import { ActivityLogService } from '../activity-log/activity-log.service';
 
 function generateRecoveryKey() {
   return Math.random().toString(36).slice(2, 10);
@@ -29,6 +30,7 @@ export class AuthController {
     private mailService: MailService,
     private messagingService: MessagingService,
     private walletService: WalletService,
+    private activityLogService: ActivityLogService,
   ) {}
 
   @Post('register/student')
@@ -49,6 +51,10 @@ export class AuthController {
       .catch((e) => {
         console.error('Failed to send verification email', e);
       });
+
+    await this.activityLogService
+      .log(String(created._id), 'AUTH_REGISTER', 'Registered as a student')
+      .catch(() => undefined);
 
     return {
       id: created._id,
@@ -74,6 +80,10 @@ export class AuthController {
       .catch((e) => {
         console.error('Failed to send verification email', e);
       });
+
+    await this.activityLogService
+      .log(String(created._id), 'AUTH_REGISTER', 'Registered as a driver')
+      .catch(() => undefined);
 
     return {
       id: created._id,
@@ -158,6 +168,9 @@ export class AuthController {
   async login(@Body() dto: LoginDto) {
     const user = await this.authService.validateUser(dto.phone, dto.password);
     if (!user) throw new BadRequestException('Invalid credentials');
+    await this.activityLogService
+      .log(String(user._id), 'AUTH_LOGIN', 'Logged in')
+      .catch(() => undefined);
     return this.authService.login(user);
   }
 
@@ -177,7 +190,14 @@ export class AuthController {
   async reset(@Body() dto: ResetPasswordDto) {
     if (dto.password !== dto.confirmPassword)
       throw new BadRequestException('Passwords do not match');
-    await this.usersService.resetPassword(dto.email, dto.token, dto.password);
+    const user = await this.usersService.resetPassword(
+      dto.email,
+      dto.token,
+      dto.password,
+    );
+    await this.activityLogService
+      .log(String(user._id), 'AUTH_PASSWORD_RESET', 'Password reset')
+      .catch(() => undefined);
     return { message: 'Password reset successful' };
   }
 }

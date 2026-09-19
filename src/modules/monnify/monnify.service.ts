@@ -39,6 +39,13 @@ export class MonnifyService {
     return process.env.MONNIFY_BASE_URL;
   }
 
+  // Monnify deprecated the v1 disbursement endpoints (account validation and
+  // single transfer) in favour of v2 - confirmed live against sandbox, which
+  // returns "This API endpoint has been deprecated..." on the v1 paths.
+  private getDisbursementBaseUrl() {
+    return (this.getBaseUrl() || '').replace(/\/api\/v1\/?$/, '/api/v2');
+  }
+
   verifySignature(
     rawBody: string | Buffer,
     signatureHeader?: string | string[],
@@ -229,9 +236,58 @@ export class MonnifyService {
       accountName: body?.accountName || body?.account_name,
       bankName: body?.bankName || body?.bank_name || body?.bank,
       bankCode: body?.bankCode || body?.bank_code,
-      ussdCode: body?.ussdCode || body?.ussd_code || body?.ussd,
+      // Confirmed live: Monnify's bank-transfer response names this
+      // "ussdPayment" (a full dial string, e.g. "*945*...#"), not "ussdCode".
+      ussdCode:
+        body?.ussdPayment || body?.ussdCode || body?.ussd_code || body?.ussd,
+      accountDurationSeconds: body?.accountDurationSeconds,
+      expiresOn: body?.expiresOn,
       providerReference:
         body?.transactionReference || body?.paymentReference || body?.reference,
+      raw: body,
+    };
+  }
+
+  /**
+   * Dedicated USSD initiation (POST /merchant/ussd/initialize), distinct from
+   * initBankPayment's bank-transfer flow. Per Monnify's docs the dial string
+   * comes back as `paymentCode`; `ussdCode` is kept as a fallback since some
+   * accounts/responses use that name instead.
+   */
+  async initUssdPayment(transactionReference: string, bankUssdCode: string) {
+    const token = await this.getAccessToken();
+    const url = `${this.getBaseUrl()}/merchant/ussd/initialize`;
+    const payload = { transactionReference, bankUssdCode };
+    this.logger.debug('Initializing USSD payment', {
+      url,
+      transactionReference,
+      bankUssdCode,
+    });
+    const resp = await this.withRetries(async () => {
+      try {
+        return await axios.post(url, payload, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+        });
+      } catch (e: any) {
+        this.logger.error(
+          'Monnify initUssdPayment error',
+          e?.response?.status,
+          e?.response?.data || e?.message,
+        );
+        throw e;
+      }
+    });
+
+    const body = resp.data?.responseBody || resp.data;
+    return {
+      providerResponse: resp.data,
+      ussdCode: body?.paymentCode || body?.ussdCode || body?.ussd_code,
+      providerReference:
+        body?.transactionReference || body?.providerReference,
+      authorizedAmount: body?.authorizedAmount,
       raw: body,
     };
   }
@@ -288,8 +344,13 @@ export class MonnifyService {
       requiresOtp:
         !!body?.authenticationRequired ||
         !!body?.requiresAuthentication ||
-        false,
-      tokenId: body?.tokenId || body?.token_id || body?.data?.tokenId,
+        String(body?.status).toUpperCase() === 'OTP_AUTHORIZATION_REQUIRED',
+      // Monnify actually nests this at responseBody.otpData.id, not a top-level
+      // tokenId - the old fallback chain never checked otpData and silently
+      // returned undefined for real OTP-required charges.
+      tokenId:
+        body?.otpData?.id || body?.tokenId || body?.token_id || body?.data?.tokenId,
+      otpMessage: body?.otpData?.message,
       raw: body,
     };
   }
@@ -404,19 +465,125 @@ export class MonnifyService {
     };
   }
 
+  async validateAccountNumber(accountNumber: string, bankCode: string) {
+    const token = await this.getAccessToken();
+    const url = `${this.getDisbursementBaseUrl()}/disbursements/account/validate?accountNumber=${accountNumber}&bankCode=${bankCode}`;
+    this.logger.debug('Validating destination account number', {
+      url,
+      accountNumber,
+      bankCode,
+    });
+    const resp = await this.withRetries(async () => {
+      try {
+        return await axios.get(url, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+        });
+      } catch (e: any) {
+        this.logger.error(
+          'Monnify validateAccountNumber error',
+          e?.response?.status,
+          e?.response?.data || e?.message,
+        );
+        throw e;
+      }
+    });
+    const body = resp.data?.responseBody || resp.data;
+    return {
+      accountNumber: body?.accountNumber || accountNumber,
+      accountName: body?.accountName || body?.account_name,
+      bankCode: body?.bankCode || bankCode,
+      raw: body,
+    };
+  }
+
+  async disburse(
+    reference: string,
+    amount: number,
+    bankCode: string,
+    accountNumber: string,
+    narration: string,
+    destinationAccountName?: string,
+  ) {
+    const token = await this.getAccessToken();
+    const url = `${this.getDisbursementBaseUrl()}/disbursements/single`;
+    const payload: any = {
+      amount,
+      reference,
+      narration,
+      destinationBankCode: bankCode,
+      destinationAccountNumber: accountNumber,
+      destinationAccountName,
+      currency: 'NGN',
+      sourceAccountNumber: process.env.MONNIFY_DISBURSEMENT_SOURCE_ACCOUNT,
+    };
+    Object.keys(payload).forEach(
+      (k) => payload[k] === undefined && delete payload[k],
+    );
+
+    this.logger.debug('Initiating Monnify disbursement', {
+      url,
+      reference,
+      amount,
+      bankCode,
+    });
+    const resp = await this.withRetries(async () => {
+      try {
+        return await axios.post(url, payload, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+        });
+      } catch (e: any) {
+        this.logger.error(
+          'Monnify disburse error',
+          e?.response?.status,
+          e?.response?.data || e?.message,
+        );
+        throw e;
+      }
+    });
+
+    const body = resp.data?.responseBody || resp.data;
+    return {
+      providerReference:
+        body?.reference || body?.transactionReference || reference,
+      status: body?.status || body?.transactionStatus || undefined,
+      raw: body,
+    };
+  }
+
   async parseWebhook(payload: any) {
+    // Real Monnify webhooks nest everything under eventData, keyed by
+    // eventType (e.g. SUCCESSFUL_TRANSACTION) - the old flat-field reading
+    // never matched that shape. Still falls back to a flat payload defensively.
+    const eventType = payload?.eventType;
+    const data = payload?.eventData || payload;
+
+    const transactionReference = data?.transactionReference;
     const providerReference =
-      payload?.paymentReference ||
-      payload?.transactionReference ||
-      payload?.reference;
-    const amount =
-      payload?.amountPaid || payload?.amount || payload?.transactionAmount;
+      transactionReference || data?.paymentReference || data?.reference;
+    const amount = data?.amountPaid || data?.amount || data?.transactionAmount;
     const status = (
-      payload?.paymentStatus ||
-      payload?.status ||
-      payload?.payment_status ||
+      data?.paymentStatus ||
+      data?.status ||
+      data?.payment_status ||
       ''
     ).toUpperCase();
-    return { providerReference, amount, status, raw: payload };
+    const destinationAccountNumber =
+      data?.destinationAccountInformation?.accountNumber;
+
+    return {
+      eventType,
+      providerReference,
+      transactionReference,
+      amount,
+      status,
+      destinationAccountNumber,
+      raw: payload,
+    };
   }
 }
