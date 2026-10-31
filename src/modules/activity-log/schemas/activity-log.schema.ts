@@ -14,7 +14,8 @@ export type ActivityAction =
   | 'TRIP_CANCELLED'
   | 'DRIVER_ONBOARDING_SUBMITTED'
   | 'IDENTITY_VERIFICATION_SUBMITTED'
-  | 'IDENTITY_VERIFICATION_UPDATED';
+  | 'IDENTITY_VERIFICATION_UPDATED'
+  | 'DRIVER_APPROVAL_UPDATED';
 
 export type ActivityLogDocument = ActivityLog & Document;
 

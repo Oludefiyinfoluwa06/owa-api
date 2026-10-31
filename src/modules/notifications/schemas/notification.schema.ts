@@ -10,7 +10,8 @@ export type NotificationType =
   | 'TRIP_STARTED'
   | 'TRIP_COMPLETED'
   | 'TRIP_CANCELLED'
-  | 'IDENTITY_VERIFICATION';
+  | 'IDENTITY_VERIFICATION'
+  | 'DRIVER_APPROVAL';
 
 export type NotificationDocument = Notification & Document;
 
