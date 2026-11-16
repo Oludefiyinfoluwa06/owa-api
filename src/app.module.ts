@@ -15,6 +15,8 @@ import { CloudinaryModule } from './common/cloudinary/cloudinary.module';
 import { TripsModule } from './modules/trips/trips.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { ActivityLogModule } from './modules/activity-log/activity-log.module';
+import { AdminModule } from './modules/admin/admin.module';
+import { ReportsModule } from './modules/reports/reports.module';
 
 @Module({
   imports: [
@@ -41,6 +43,8 @@ import { ActivityLogModule } from './modules/activity-log/activity-log.module';
     TripsModule,
     NotificationsModule,
     ActivityLogModule,
+    AdminModule,
+    ReportsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

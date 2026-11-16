@@ -47,6 +47,7 @@ export class DriversController {
       [
         { name: 'idCard', maxCount: 1 },
         { name: 'driversLicense', maxCount: 1 },
+        { name: 'passport', maxCount: 1 },
       ],
       { storage: multer.memoryStorage() },
     ),
@@ -58,10 +59,12 @@ export class DriversController {
     files: {
       idCard?: Express.Multer.File[];
       driversLicense?: Express.Multer.File[];
+      passport?: Express.Multer.File[];
     },
   ) {
     const idCardFile = files.idCard && files.idCard[0];
     const driversLicenseFile = files.driversLicense && files.driversLicense[0];
+    const passportFile = files.passport && files.passport[0];
 
     if (!idCardFile || !driversLicenseFile) {
       throw new BadRequestException(
@@ -77,6 +80,8 @@ export class DriversController {
       idCardFile.originalname,
       driversLicenseFile.buffer,
       driversLicenseFile.originalname,
+      passportFile?.buffer,
+      passportFile?.originalname,
     );
   }
 

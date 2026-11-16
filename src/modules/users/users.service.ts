@@ -58,6 +58,13 @@ export class UsersService {
     return await this.userModel.findOne({ phone });
   }
 
+  async touchLastActive(userId: string) {
+    await this.userModel.updateOne(
+      { _id: userId },
+      { $set: { lastActiveAt: new Date() } },
+    );
+  }
+
   async findByEmail(email: string) {
     return await this.userModel.findOne({ email });
   }
@@ -273,6 +280,9 @@ export class UsersService {
       accountName: user.accountName,
       idCardUrl: (user as any).idCardUrl,
       driversLicenseUrl: (user as any).driversLicenseUrl,
+      passportUrl: user.passportUrl,
+      driverApprovalStatus: user.driverApprovalStatus,
+      approvalReason: user.approvalReason,
       idCardVerified: user.idCardVerified ?? false,
       driversLicenseVerified: user.driversLicenseVerified ?? false,
       verificationSessionId: (user as any).verificationSessionId,

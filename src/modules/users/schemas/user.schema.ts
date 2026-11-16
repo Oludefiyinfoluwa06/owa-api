@@ -2,12 +2,14 @@ import { Schema, Document } from 'mongoose';
 
 export type VehicleType = 'Bus' | 'Bike' | 'Keke';
 
+export type DriverApprovalStatus = 'PENDING' | 'APPROVED' | 'REJECTED';
+
 export interface UserDocument extends Document {
   fullName: string;
   email: string;
   phone: string;
   passwordHash: string;
-  role: 'student' | 'driver';
+  role: 'student' | 'driver' | 'admin';
   verified: boolean;
   verificationCode?: string;
   recoveryKey?: string;
@@ -15,6 +17,10 @@ export interface UserDocument extends Document {
   driverTagNumber?: string;
   qrUrl?: string;
   vehicleType?: VehicleType;
+  plateNumber?: string;
+  idCardUrl?: string;
+  driversLicenseUrl?: string;
+  passportUrl?: string;
   bankName?: string;
   accountNumber?: string;
   bankCode?: string;
@@ -26,6 +32,10 @@ export interface UserDocument extends Document {
   identityVerificationStatus?: string;
   identityVerificationMessage?: string;
   identityVerificationCheckedAt?: Date;
+  driverApprovalStatus?: DriverApprovalStatus;
+  approvalReason?: string;
+  onboardingSubmittedAt?: Date;
+  lastActiveAt?: Date;
 }
 
 export const UserSchema = new Schema(
@@ -34,7 +44,7 @@ export const UserSchema = new Schema(
     email: { type: String, required: true, unique: true, index: true },
     phone: { type: String, required: true, unique: true, index: true },
     passwordHash: { type: String, required: true },
-    role: { type: String, enum: ['student', 'driver'], default: 'student' },
+    role: { type: String, enum: ['student', 'driver', 'admin'], default: 'student' },
     verified: { type: Boolean, default: false },
     verificationCode: { type: String },
     recoveryKey: { type: String },
@@ -49,6 +59,7 @@ export const UserSchema = new Schema(
     plateNumber: { type: String },
     idCardUrl: { type: String },
     driversLicenseUrl: { type: String },
+    passportUrl: { type: String },
     idCardVerified: { type: Boolean, default: false },
     driversLicenseVerified: { type: Boolean, default: false },
     verificationSessionId: { type: String },
@@ -56,6 +67,14 @@ export const UserSchema = new Schema(
     identityVerificationStatus: { type: String, default: 'pending' },
     identityVerificationMessage: { type: String },
     identityVerificationCheckedAt: { type: Date },
+    driverApprovalStatus: {
+      type: String,
+      enum: ['PENDING', 'APPROVED', 'REJECTED'],
+      index: true,
+    },
+    approvalReason: { type: String },
+    onboardingSubmittedAt: { type: Date },
+    lastActiveAt: { type: Date, index: true },
   },
   { timestamps: true },
 );

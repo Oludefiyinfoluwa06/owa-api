@@ -10,7 +10,7 @@ export type TransactionType =
 
 export interface TransactionDocument extends Document {
   type: TransactionType;
-  status: 'PENDING' | 'SUCCESS' | 'FAILED';
+  status: 'PENDING' | 'SUCCESS' | 'FAILED' | 'REJECTED';
   userId: any;
   walletId: any;
   amount: number;
@@ -20,6 +20,7 @@ export interface TransactionDocument extends Document {
   toUserId?: any;
   toWalletId?: any;
   tripId?: any;
+  hidden?: boolean;
 }
 
 export const TransactionSchema = new Schema(
@@ -31,7 +32,10 @@ export const TransactionSchema = new Schema(
     },
     status: {
       type: String,
-      enum: ['PENDING', 'SUCCESS', 'FAILED'],
+      // REJECTED is distinct from FAILED: FAILED means a disbursement was
+      // attempted and the provider declined it; REJECTED means an admin
+      // declined a pending withdrawal before it was ever sent.
+      enum: ['PENDING', 'SUCCESS', 'FAILED', 'REJECTED'],
       default: 'SUCCESS',
     },
     userId: { type: Schema.Types.ObjectId, required: true, ref: 'User', index: true },
@@ -43,6 +47,9 @@ export const TransactionSchema = new Schema(
     toUserId: { type: Schema.Types.ObjectId, ref: 'User' },
     toWalletId: { type: Schema.Types.ObjectId, ref: 'Wallet' },
     tripId: { type: Schema.Types.ObjectId, ref: 'Trip', index: true },
+    // Soft-delete for the admin "Delete" action - keeps the record and audit
+    // trail intact while hiding it from admin-facing lists.
+    hidden: { type: Boolean, default: false, index: true },
   },
   { timestamps: true },
 );

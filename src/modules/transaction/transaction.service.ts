@@ -14,6 +14,10 @@ export class TransactionService {
     private readonly transactionModel: Model<TransactionDocument>,
   ) {}
 
+  async findById(transactionId: string) {
+    return this.transactionModel.findById(transactionId);
+  }
+
   async createTransaction(
     payload: Partial<TransactionDocument> & {
       type: TransactionType;
@@ -27,7 +31,7 @@ export class TransactionService {
 
   async updateStatus(
     transactionId: string,
-    status: 'PENDING' | 'SUCCESS' | 'FAILED',
+    status: 'PENDING' | 'SUCCESS' | 'FAILED' | 'REJECTED',
     extra?: Partial<TransactionDocument>,
   ) {
     return this.transactionModel.findByIdAndUpdate(

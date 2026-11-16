@@ -49,6 +49,8 @@ export class DriversService {
     idCardName: string,
     driversLicenseBuffer: Buffer,
     driversLicenseName: string,
+    passportBuffer?: Buffer,
+    passportName?: string,
   ) {
     const user = await this.usersService.findById(userId);
     if (!user) throw new NotFoundException('User not found');
@@ -71,9 +73,21 @@ export class DriversService {
 
     user.role = 'driver';
     user.vehicleType = vehicleType as any;
-    (user as any).plateNumber = plateNumber;
-    (user as any).idCardUrl = idRes.secure_url;
-    (user as any).driversLicenseUrl = dlRes.secure_url;
+    user.plateNumber = plateNumber;
+    user.idCardUrl = idRes.secure_url;
+    user.driversLicenseUrl = dlRes.secure_url;
+    user.driverApprovalStatus = 'PENDING';
+    user.onboardingSubmittedAt = new Date();
+
+    if (passportBuffer) {
+      const ppRes = await this.cloudinary.uploadBuffer(
+        passportBuffer,
+        `${userId}_passport_${passportName}`,
+        clFolder,
+        'raw',
+      );
+      user.passportUrl = ppRes.secure_url;
+    }
 
     const driver = await user.save();
 
