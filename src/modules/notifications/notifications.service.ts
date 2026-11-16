@@ -26,6 +26,19 @@ export class NotificationsService {
     return this.notificationModel.create({ userId, type, title, body, data });
   }
 
+  async createMany(
+    userIds: string[],
+    type: NotificationType,
+    title: string,
+    body: string,
+    data?: any,
+  ) {
+    if (!userIds.length) return { count: 0 };
+    const docs = userIds.map((userId) => ({ userId, type, title, body, data }));
+    const result = await this.notificationModel.insertMany(docs);
+    return { count: result.length };
+  }
+
   async findForUser(
     userId: string,
     page = 1,

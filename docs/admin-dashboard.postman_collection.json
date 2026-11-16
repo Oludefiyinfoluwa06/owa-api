@@ -1,0 +1,517 @@
+{
+  "info": {
+    "_postman_id": "f3a2e8d4-6b1c-4e2a-9f7d-admindash0001",
+    "name": "OWA - Admin Dashboard",
+    "description": "Admin dashboard endpoints: overview stats, analytics, driver approvals, active drivers, passengers/students, transactions, payments & withdrawals, reports & issues, and system announcements. All requests require an admin-role JWT (see the 'Admin Login (helper)' request). Admin accounts are not self-registered - create one with scripts/seed-admin.ts.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [{ "key": "token", "value": "{{adminToken}}", "type": "string" }]
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:3000", "type": "string" },
+    { "key": "adminToken", "value": "", "type": "string" },
+    { "key": "adminPhone", "value": "", "type": "string" },
+    { "key": "adminPassword", "value": "", "type": "string" },
+    { "key": "driverId", "value": "", "type": "string" },
+    { "key": "transactionId", "value": "", "type": "string" },
+    { "key": "reportId", "value": "", "type": "string" },
+    { "key": "studentToken", "value": "", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "Admin Login (helper)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Login succeeded', function () {",
+              "    pm.response.to.have.status(201);",
+              "});",
+              "",
+              "if (pm.response.code === 201) {",
+              "    const body = pm.response.json();",
+              "    if (body.accessToken) {",
+              "        pm.collectionVariables.set('adminToken', body.accessToken);",
+              "        console.log('adminToken saved to collection variables');",
+              "    }",
+              "}"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"phone\": \"{{adminPhone}}\",\n  \"password\": \"{{adminPassword}}\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/auth/login",
+          "host": ["{{baseUrl}}"],
+          "path": ["auth", "login"]
+        },
+        "description": "Not an admin-dashboard endpoint itself - just the shared /auth/login, included so the collection works standalone. Fill in adminPhone/adminPassword (an account seeded via scripts/seed-admin.ts), run this once, and it auto-saves the token into {{adminToken}} for every other request in this folder."
+      }
+    },
+    {
+      "name": "Get Dashboard",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/admin/dashboard?period=today",
+          "host": ["{{baseUrl}}"],
+          "path": ["admin", "dashboard"],
+          "query": [
+            {
+              "key": "period",
+              "value": "today",
+              "description": "One of: today | week | month | year. Defaults to today if omitted."
+            }
+          ]
+        },
+        "description": "Overview stats (transaction totals, rides completed, active drivers, pending approvals), transaction-over-time series, revenue breakdown by vehicle type, and recent transactions. platformRevenue is always null - no commission/fee model exists yet."
+      }
+    },
+    {
+      "name": "Get Analytics",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/admin/analytics?page=1&limit=20&type=&status=&search=",
+          "host": ["{{baseUrl}}"],
+          "path": ["admin", "analytics"],
+          "query": [
+            { "key": "page", "value": "1" },
+            { "key": "limit", "value": "20" },
+            {
+              "key": "type",
+              "value": "",
+              "disabled": true,
+              "description": "Filter transaction logs by type, e.g. TOPUP | DEBIT | TRANSFER | WITHDRAWAL | TRIP_PAYMENT | ADJUSTMENT"
+            },
+            {
+              "key": "status",
+              "value": "",
+              "disabled": true,
+              "description": "Filter transaction logs by status: PENDING | SUCCESS | FAILED"
+            },
+            {
+              "key": "search",
+              "value": "",
+              "disabled": true,
+              "description": "Search transaction logs by the transacting user's full name"
+            }
+          ]
+        },
+        "description": "7-day transaction volume, 4-week revenue trend, paginated/filterable transaction logs, and top driver earners (by lifetime TRIP_PAYMENT earnings)."
+      }
+    },
+    {
+      "name": "List Driver Approvals",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/admin/drivers/approvals?status=&search=&sort=&page=1&limit=20",
+          "host": ["{{baseUrl}}"],
+          "path": ["admin", "drivers", "approvals"],
+          "query": [
+            {
+              "key": "status",
+              "value": "",
+              "disabled": true,
+              "description": "PENDING | APPROVED | REJECTED (case-insensitive). Omit for all statuses."
+            },
+            {
+              "key": "search",
+              "value": "",
+              "disabled": true,
+              "description": "Matches against fullName, driverTagNumber, or phone"
+            },
+            {
+              "key": "sort",
+              "value": "",
+              "disabled": true,
+              "description": "\"oldest\" for oldest-applied first. Omit for newest-first (default)."
+            },
+            { "key": "page", "value": "1" },
+            { "key": "limit", "value": "20" }
+          ]
+        },
+        "description": "Drivers who have submitted onboarding documents, for the admin approvals table."
+      }
+    },
+    {
+      "name": "Get Driver Approval Detail",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/admin/drivers/approvals/{{driverId}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["admin", "drivers", "approvals", "{{driverId}}"]
+        },
+        "description": "Full detail for the approvals modal: personal info, vehicle details, and document URLs (national ID, driver's license, passport if uploaded). Set {{driverId}} from a row in 'List Driver Approvals'."
+      }
+    },
+    {
+      "name": "Approve Driver",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/admin/drivers/approvals/{{driverId}}/approve",
+          "host": ["{{baseUrl}}"],
+          "path": ["admin", "drivers", "approvals", "{{driverId}}", "approve"]
+        },
+        "description": "Sets driverApprovalStatus to APPROVED and notifies the driver. No body."
+      }
+    },
+    {
+      "name": "Reject Driver",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"reason\": \"Driver's license photo is unclear, please resubmit\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/admin/drivers/approvals/{{driverId}}/reject",
+          "host": ["{{baseUrl}}"],
+          "path": ["admin", "drivers", "approvals", "{{driverId}}", "reject"]
+        },
+        "description": "Sets driverApprovalStatus to REJECTED and notifies the driver with the given reason. reason is optional."
+      }
+    },
+    {
+      "name": "Get Active Drivers",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/admin/drivers/active?search=&page=1&limit=20",
+          "host": ["{{baseUrl}}"],
+          "path": ["admin", "drivers", "active"],
+          "query": [
+            {
+              "key": "search",
+              "value": "",
+              "disabled": true,
+              "description": "Matches against fullName or driverTagNumber"
+            },
+            { "key": "page", "value": "1" },
+            { "key": "limit", "value": "20" }
+          ]
+        },
+        "description": "Fleet stats (total approved drivers, active-now count, rides today) plus a per-driver list with lifetime rides/earnings and Active/Inactive status (based on lastActiveAt within the last 15 minutes). rating is always null - not implemented yet."
+      }
+    },
+    {
+      "name": "Get Passengers / Students",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/admin/students?search=&status=&page=1&limit=20",
+          "host": ["{{baseUrl}}"],
+          "path": ["admin", "students"],
+          "query": [
+            {
+              "key": "search",
+              "value": "",
+              "disabled": true,
+              "description": "Matches against fullName or email"
+            },
+            {
+              "key": "status",
+              "value": "",
+              "disabled": true,
+              "description": "active | inactive, based on lastActiveAt within the last 15 minutes. Omit for all."
+            },
+            { "key": "page", "value": "1" },
+            { "key": "limit", "value": "20" }
+          ]
+        },
+        "description": "Stats (total passengers, active this week, average wallet balance, total spent) plus a per-student list with wallet balance, lifetime completed trips, and Active/Inactive status. Route is /admin/students (matches the internal role: 'student' field) - the mockup's page label is 'Passenger/Student'. totalSpent sums each student's own TRIP_PAYMENT + DEBIT transactions plus outgoing TRANSFERs; activeThisWeek uses a 7-day lastActiveAt window, separate from the per-row 15-minute Active/Inactive badge."
+      }
+    },
+    {
+      "name": "Get Transactions",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/admin/transactions?search=&type=&status=&page=1&limit=20",
+          "host": ["{{baseUrl}}"],
+          "path": ["admin", "transactions"],
+          "query": [
+            {
+              "key": "search",
+              "value": "",
+              "disabled": true,
+              "description": "Search by the transacting user's full name"
+            },
+            {
+              "key": "type",
+              "value": "",
+              "disabled": true,
+              "description": "TOPUP | DEBIT | TRANSFER | WITHDRAWAL | TRIP_PAYMENT | ADJUSTMENT"
+            },
+            {
+              "key": "status",
+              "value": "",
+              "disabled": true,
+              "description": "PENDING | SUCCESS | FAILED | REJECTED"
+            },
+            { "key": "page", "value": "1" },
+            { "key": "limit", "value": "20" }
+          ]
+        },
+        "description": "Stats (total volume, today's transaction count, pending count, failed count - all excluding hidden/deleted rows) plus the paginated/filterable transaction list for the main Transactions page. Set {{transactionId}} from a row's id for the detail/approve/reject/delete requests below."
+      }
+    },
+    {
+      "name": "Get Transaction Detail",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/admin/transactions/{{transactionId}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["admin", "transactions", "{{transactionId}}"]
+        },
+        "description": "Full detail for the transaction detail screen: amount, status, from/to parties, raw metadata (bank details, provider reference, rejection reason, etc.), createdAt/updatedAt. Does not fabricate a step-by-step progress timeline with timestamps we don't actually have - that's left to the frontend to render from type/status."
+      }
+    },
+    {
+      "name": "Approve Withdrawal",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/admin/transactions/{{transactionId}}/approve",
+          "host": ["{{baseUrl}}"],
+          "path": ["admin", "transactions", "{{transactionId}}", "approve"]
+        },
+        "description": "Only valid for a WITHDRAWAL transaction in PENDING status (404 otherwise). Withdrawals no longer disburse instantly on request - the wallet is debited immediately when requested, but money only actually moves to the bank once an admin approves it here. On a Monnify failure the amount is refunded and the transaction marked FAILED."
+      }
+    },
+    {
+      "name": "Reject Withdrawal",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"reason\": \"Bank account name mismatch, please verify\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/admin/transactions/{{transactionId}}/reject",
+          "host": ["{{baseUrl}}"],
+          "path": ["admin", "transactions", "{{transactionId}}", "reject"]
+        },
+        "description": "Only valid for a WITHDRAWAL transaction in PENDING status. Declines it before it's ever sent to Monnify, refunds the reserved amount back to the wallet, and notifies the user with the given reason. reason is optional."
+      }
+    },
+    {
+      "name": "Delete (Hide) Transaction",
+      "request": {
+        "method": "DELETE",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/admin/transactions/{{transactionId}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["admin", "transactions", "{{transactionId}}"]
+        },
+        "description": "Soft-delete: sets a hidden flag so the transaction disappears from admin list views (here and in Analytics), but the record and audit trail stay intact in the DB - it's still readable via Get Transaction Detail."
+      }
+    },
+    {
+      "name": "Retry Withdrawal",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/admin/transactions/{{transactionId}}/retry",
+          "host": ["{{baseUrl}}"],
+          "path": ["admin", "transactions", "{{transactionId}}", "retry"]
+        },
+        "description": "Only valid for a WITHDRAWAL transaction in FAILED status (400 otherwise). Re-reserves the amount (it was refunded when the withdrawal first failed) and re-attempts disbursement. Used by both the 'Retry Payout' button on the Payments page and any equivalent action on the Transactions page - there's one canonical endpoint for this, not a duplicate under /admin/payments."
+      }
+    },
+    {
+      "name": "Get Payments & Withdrawals",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/admin/payments?search=&status=&page=1&limit=20",
+          "host": ["{{baseUrl}}"],
+          "path": ["admin", "payments"],
+          "query": [
+            {
+              "key": "search",
+              "value": "",
+              "disabled": true,
+              "description": "Search payment history by driver name"
+            },
+            {
+              "key": "status",
+              "value": "",
+              "disabled": true,
+              "description": "PENDING | SUCCESS | FAILED | REJECTED"
+            },
+            { "key": "page", "value": "1" },
+            { "key": "limit", "value": "20" }
+          ]
+        },
+        "description": "Driver-payouts view: stats (pending withdrawals amount, total paid out, platform commission, processing count), a 'pendingWithdrawals' review list (unpaginated, capped at 20, masked account numbers), and a paginated 'paymentHistory' list scoped to WITHDRAWAL transactions. platformCommission is always 0 and withdrawals pay out in full - no fee/commission model exists yet (kept consistent with the Dashboard's stubbed platformRevenue). 'processing' is an alias for the pending count, not a separately tracked state - there's no distinct in-flight status in this system since disbursement resolves to SUCCESS/FAILED synchronously. Approve/Reject/Retry actions live under /admin/transactions/:id/... (see above) since this is the same underlying resource as the Transactions page."
+      }
+    },
+    {
+      "name": "Get Payment Detail",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/admin/payments/{{transactionId}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["admin", "payments", "{{transactionId}}"]
+        },
+        "description": "The payout detail screen: requestedAmount, transferFee (always 0 for now), driverReceives, from/to (masked destination account), paymentId/reference, modeOfPayment, and failureReason/rejectionReason when applicable. failureReason is Monnify's actual error message (e.g. 'Account name does not match...'), not a fabricated one - and it stays on the record even after a successful retry, as a historical note of what happened on the failed attempt."
+      }
+    },
+    {
+      "name": "Submit Report (user-facing helper)",
+      "request": {
+        "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{studentToken}}", "type": "string" }] },
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"type\": \"COMPLAINT\",\n  \"subject\": \"Payment/Network Issue\",\n  \"description\": \"My topup went through but my balance did not update\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/reports",
+          "host": ["{{baseUrl}}"],
+          "path": ["reports"]
+        },
+        "description": "Not an admin endpoint - POST /reports, open to any authenticated user (student or driver), included so this collection has something real for the admin Reports endpoints below to manage. Overrides the collection's admin bearer auth with {{studentToken}} - log in as a non-admin user and paste their token here. type is DISPUTE | COMPLAINT. tripId/transactionId are optional context references."
+      }
+    },
+    {
+      "name": "Get Reports & Issues",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/admin/reports?status=&search=&page=1&limit=20",
+          "host": ["{{baseUrl}}"],
+          "path": ["admin", "reports"],
+          "query": [
+            {
+              "key": "status",
+              "value": "",
+              "disabled": true,
+              "description": "UNRESOLVED | RESOLVED"
+            },
+            {
+              "key": "search",
+              "value": "",
+              "disabled": true,
+              "description": "Matches against the report subject or the reporter's full name"
+            },
+            { "key": "page", "value": "1" },
+            { "key": "limit", "value": "20" }
+          ]
+        },
+        "description": "Stats (total, unresolved, resolved this week) plus the paginated reports list, excluding hidden/deleted ones. Set {{reportId}} from a row's id for the detail/resolve/delete requests below."
+      }
+    },
+    {
+      "name": "Get Report Detail",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/admin/reports/{{reportId}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["admin", "reports", "{{reportId}}"]
+        },
+        "description": "Full detail: reporter info, type, subject, description, status, optional tripId/transactionId context, and adminNote/resolvedAt once resolved."
+      }
+    },
+    {
+      "name": "Resolve Report",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"adminNote\": \"Refunded the missing topup manually\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/admin/reports/{{reportId}}/resolve",
+          "host": ["{{baseUrl}}"],
+          "path": ["admin", "reports", "{{reportId}}", "resolve"]
+        },
+        "description": "Marks the report RESOLVED with an optional admin note. adminNote is optional."
+      }
+    },
+    {
+      "name": "Delete (Hide) Report",
+      "request": {
+        "method": "DELETE",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/admin/reports/{{reportId}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["admin", "reports", "{{reportId}}"]
+        },
+        "description": "Soft-delete, same pattern as transactions: hides it from admin list views but keeps the record."
+      }
+    },
+    {
+      "name": "Send Announcement",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"message\": \"Scheduled maintenance will occur tonight at 2:00 AM WAT. The app will be unavailable for approximately 1 hour.\",\n  \"audience\": \"ALL\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/admin/announcements",
+          "host": ["{{baseUrl}}"],
+          "path": ["admin", "announcements"]
+        },
+        "description": "Broadcasts the message as a real notification (type ANNOUNCEMENT) to every targeted user right away - 'ALL' means every student+driver, or scope it to just 'STUDENT' or 'DRIVER'. Also saves an Announcement record (with the resulting recipientCount) for the history list below. audience defaults to ALL if omitted. There's no separate user-facing announcements endpoint - delivery is entirely through the existing GET /notifications."
+      }
+    },
+    {
+      "name": "Get Announcements History",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/admin/announcements?page=1&limit=20",
+          "host": ["{{baseUrl}}"],
+          "path": ["admin", "announcements"],
+          "query": [
+            { "key": "page", "value": "1" },
+            { "key": "limit", "value": "20" }
+          ]
+        },
+        "description": "Paginated history of sent announcements, newest first - the list shown on the System Announcement page."
+      }
+    }
+  ]
+}

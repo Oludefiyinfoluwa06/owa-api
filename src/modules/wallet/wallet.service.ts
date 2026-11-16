@@ -14,6 +14,7 @@ import { UsersService } from '../users/users.service';
 import { WalletDocument } from './schemas/wallet.schema';
 import { PaymentService } from '../payment/payment.service';
 import { TransactionService } from '../transaction/transaction.service';
+import { TransactionDocument } from './schemas/transaction.schema';
 import { NotificationsService } from '../notifications/notifications.service';
 import { ActivityLogService } from '../activity-log/activity-log.service';
 
@@ -529,6 +530,10 @@ export class WalletService {
       accountName: resolved.accountName,
     };
 
+    // Reserve the funds immediately, but don't disburse yet - a pending
+    // withdrawal now waits for an admin to approve or reject it (see
+    // approveWithdrawal/rejectWithdrawal) rather than hitting Monnify
+    // the instant it's requested.
     await this.walletModel.findByIdAndUpdate(wallet._id, {
       $inc: { balance: -amount },
     });
@@ -542,7 +547,72 @@ export class WalletService {
       metadata: { bank },
     } as any);
 
+    await this.notifyAndLog(
+      userId,
+      'WITHDRAWAL',
+      'WALLET_WITHDRAWAL',
+      'Withdrawal requested',
+      `Your withdrawal of ${amount} is awaiting admin approval`,
+      { amount, bank },
+    );
+
+    return { ok: true, transactionId: String(transaction._id), status: 'PENDING' };
+  }
+
+  /**
+   * Admin action: actually sends a pending withdrawal to Monnify. Only now
+   * does money leave the platform - the wallet was already debited when the
+   * withdrawal was requested.
+   */
+  async approveWithdrawal(transactionId: string) {
+    const transaction = await this.transactionService.findById(transactionId);
+    if (!transaction || transaction.type !== 'WITHDRAWAL')
+      throw new NotFoundException('Withdrawal transaction not found');
+    if (transaction.status !== 'PENDING')
+      throw new BadRequestException(
+        `Cannot approve a withdrawal in status ${transaction.status}`,
+      );
+
+    return this.disburseWithdrawal(transaction);
+  }
+
+  /**
+   * Admin action: re-attempts disbursement for a withdrawal that previously
+   * failed. The amount was already refunded to the wallet when it failed, so
+   * it has to be re-reserved before trying again - otherwise a second
+   * failure would refund money that was never actually taken.
+   */
+  async retryWithdrawal(transactionId: string) {
+    const transaction = await this.transactionService.findById(transactionId);
+    if (!transaction || transaction.type !== 'WITHDRAWAL')
+      throw new NotFoundException('Withdrawal transaction not found');
+    if (transaction.status !== 'FAILED')
+      throw new BadRequestException(
+        `Cannot retry a withdrawal in status ${transaction.status}`,
+      );
+
+    const wallet = await this.walletModel.findById(transaction.walletId);
+    if (!wallet || Number(wallet.balance) < transaction.amount) {
+      throw new BadRequestException('Insufficient wallet balance to retry this withdrawal');
+    }
+
+    await this.walletModel.findByIdAndUpdate(transaction.walletId, {
+      $inc: { balance: -transaction.amount },
+    });
+    await this.transactionService.updateStatus(String(transaction._id), 'PENDING');
+
+    return this.disburseWithdrawal(transaction);
+  }
+
+  private async disburseWithdrawal(transaction: TransactionDocument) {
+    const bank = transaction.metadata?.bank;
+    if (!bank?.accountNumber || !bank?.bankCode)
+      throw new BadRequestException('Withdrawal is missing destination bank details');
+
+    const userId = String(transaction.userId);
+    const amount = transaction.amount;
     const reference = `withdrawal-${transaction._id}`;
+
     try {
       const result = await this.monnify.disburse(
         reference,
@@ -563,21 +633,22 @@ export class WalletService {
         userId,
         'WITHDRAWAL',
         'WALLET_WITHDRAWAL',
-        'Withdrawal successful',
-        `Your withdrawal of ${amount} was successful`,
+        'Withdrawal approved',
+        `Your withdrawal of ${amount} was approved and sent to your bank`,
         { amount, bank },
       );
 
-      return { ok: true, transactionId: String(transaction._id), status: 'SUCCESS' };
-    } catch (e) {
-      this.logger.error('Withdrawal disbursement failed, rolling back', e);
-      await this.walletModel.findByIdAndUpdate(wallet._id, {
+      return { ok: true, status: 'SUCCESS' };
+    } catch (e: any) {
+      const failureReason =
+        e?.response?.data?.responseMessage || e?.message || 'Disbursement failed';
+      this.logger.error('Withdrawal disbursement failed, refunding', e);
+      await this.walletModel.findByIdAndUpdate(transaction.walletId, {
         $inc: { balance: amount },
       });
-      await this.transactionService.updateStatus(
-        String(transaction._id),
-        'FAILED',
-      );
+      await this.transactionService.updateStatus(String(transaction._id), 'FAILED', {
+        metadata: { ...transaction.metadata, failureReason },
+      } as any);
 
       await this.notifyAndLog(
         userId,
@@ -585,13 +656,49 @@ export class WalletService {
         'WALLET_WITHDRAWAL',
         'Withdrawal failed',
         `Your withdrawal of ${amount} could not be completed and has been reversed`,
-        { amount, bank },
+        { amount, bank, failureReason },
       );
 
       throw new BadRequestException(
-        'Withdrawal failed, please try again later',
+        'Withdrawal disbursement failed, the amount has been refunded',
       );
     }
+  }
+
+  /**
+   * Admin action: declines a pending withdrawal before it's ever sent to
+   * Monnify, and refunds the reserved amount back to the wallet.
+   */
+  async rejectWithdrawal(transactionId: string, reason?: string) {
+    const transaction = await this.transactionService.findById(transactionId);
+    if (!transaction || transaction.type !== 'WITHDRAWAL')
+      throw new NotFoundException('Withdrawal transaction not found');
+    if (transaction.status !== 'PENDING')
+      throw new BadRequestException(
+        `Cannot reject a withdrawal in status ${transaction.status}`,
+      );
+
+    const userId = String(transaction.userId);
+    const amount = transaction.amount;
+
+    await this.walletModel.findByIdAndUpdate(transaction.walletId, {
+      $inc: { balance: amount },
+    });
+    await this.transactionService.updateStatus(String(transaction._id), 'REJECTED', {
+      metadata: { ...transaction.metadata, rejectionReason: reason },
+    } as any);
+
+    await this.notifyAndLog(
+      userId,
+      'WITHDRAWAL',
+      'WALLET_WITHDRAWAL',
+      'Withdrawal rejected',
+      reason ||
+        'Your withdrawal request was rejected and the amount has been refunded to your wallet',
+      { amount, reason },
+    );
+
+    return { ok: true, status: 'REJECTED' };
   }
 
   async deposit(userId: string, amount: number) {

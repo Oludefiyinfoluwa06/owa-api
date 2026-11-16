@@ -4,12 +4,17 @@ import { Model, Types } from 'mongoose';
 import { UserDocument } from '../users/schemas/user.schema';
 import { TripDocument } from '../trips/schemas/trip.schema';
 import { TransactionDocument } from '../wallet/schemas/transaction.schema';
+import { WalletDocument } from '../wallet/schemas/wallet.schema';
 import { NotificationsService } from '../notifications/notifications.service';
 import { ActivityLogService } from '../activity-log/activity-log.service';
+import { WalletService } from '../wallet/wallet.service';
+import { ReportsService } from '../reports/reports.service';
+import { AnnouncementsService } from '../announcements/announcements.service';
 
 type Period = 'today' | 'week' | 'month' | 'year';
 const LAGOS_OFFSET_MS = 60 * 60 * 1000; // Africa/Lagos is a fixed UTC+1, no DST
 const ACTIVE_WINDOW_MS = 15 * 60 * 1000; // "active now" = seen in the last 15 minutes
+const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 
 @Injectable()
 export class AdminService {
@@ -18,8 +23,12 @@ export class AdminService {
     @InjectModel('Trip') private readonly tripModel: Model<TripDocument>,
     @InjectModel('Transaction')
     private readonly transactionModel: Model<TransactionDocument>,
+    @InjectModel('Wallet') private readonly walletModel: Model<WalletDocument>,
     private readonly notificationsService: NotificationsService,
     private readonly activityLogService: ActivityLogService,
+    private readonly walletService: WalletService,
+    private readonly reportsService: ReportsService,
+    private readonly announcementsService: AnnouncementsService,
   ) {}
 
   // ---------- shared helpers ----------
@@ -283,7 +292,7 @@ export class AdminService {
     const page = Number(query.page) || 1;
     const limit = Number(query.limit) || 20;
 
-    const match: any = {};
+    const match: any = { hidden: { $ne: true } };
     if (query.type) match.type = query.type;
     if (query.status) match.status = query.status;
 
@@ -550,5 +559,382 @@ export class AdminService {
       page,
       limit,
     };
+  }
+
+  // ---------- passengers / students ----------
+
+  async getPassengers(query: {
+    search?: string;
+    status?: 'active' | 'inactive';
+    page?: number;
+    limit?: number;
+  }) {
+    const page = Number(query.page) || 1;
+    const limit = Number(query.limit) || 20;
+    const activeSince = this.activeSince();
+    const weekAgo = new Date(Date.now() - WEEK_MS);
+
+    const filter: any = { role: 'student' };
+    if (query.search) {
+      const re = new RegExp(query.search, 'i');
+      filter.$or = [{ fullName: re }, { email: re }];
+    }
+    if (query.status === 'active') {
+      filter.lastActiveAt = { $gte: activeSince };
+    } else if (query.status === 'inactive') {
+      filter.$and = [
+        { $or: [{ lastActiveAt: { $lt: activeSince } }, { lastActiveAt: null }] },
+      ];
+    }
+
+    const [totalPassengers, activeThisWeek, students, total, balanceAgg, spentAgg] =
+      await Promise.all([
+        this.userModel.countDocuments({ role: 'student' }),
+        this.userModel.countDocuments({
+          role: 'student',
+          lastActiveAt: { $gte: weekAgo },
+        }),
+        this.userModel
+          .find(filter)
+          .sort({ createdAt: -1 })
+          .skip((page - 1) * limit)
+          .limit(limit)
+          .select('fullName email lastActiveAt createdAt')
+          .lean(),
+        this.userModel.countDocuments(filter),
+        this.walletModel.aggregate([
+          {
+            $lookup: {
+              from: 'users',
+              localField: 'userId',
+              foreignField: '_id',
+              as: 'user',
+            },
+          },
+          { $unwind: '$user' },
+          { $match: { 'user.role': 'student' } },
+          { $group: { _id: null, avgBalance: { $avg: '$balance' } } },
+        ]),
+        // "Spent" = fares paid (own TRIP_PAYMENT row), outgoing transfers, and
+        // plain debits - everything that actually left a student's wallet.
+        // Withdrawals aren't included since only drivers can withdraw.
+        this.transactionModel.aggregate([
+          {
+            $lookup: {
+              from: 'users',
+              localField: 'userId',
+              foreignField: '_id',
+              as: 'user',
+            },
+          },
+          { $unwind: '$user' },
+          {
+            $match: {
+              'user.role': 'student',
+              $or: [
+                { type: { $in: ['TRIP_PAYMENT', 'DEBIT'] } },
+                { type: 'TRANSFER', 'metadata.direction': 'OUT' },
+              ],
+            },
+          },
+          { $group: { _id: null, total: { $sum: '$amount' } } },
+        ]),
+      ]);
+
+    const studentIds = students.map((s) => s._id as Types.ObjectId);
+    const [wallets, tripsAgg] = await Promise.all([
+      this.walletModel
+        .find({ userId: { $in: studentIds } })
+        .select('userId balance')
+        .lean(),
+      this.tripModel.aggregate([
+        { $match: { passengerId: { $in: studentIds }, status: 'COMPLETED' } },
+        { $group: { _id: '$passengerId', count: { $sum: 1 } } },
+      ]),
+    ]);
+    const walletMap = new Map(wallets.map((w) => [String(w.userId), w.balance]));
+    const tripsMap = new Map(tripsAgg.map((t) => [String(t._id), t.count]));
+
+    const items = students.map((s) => ({
+      id: s._id,
+      fullName: s.fullName,
+      email: s.email,
+      walletBalance: walletMap.get(String(s._id)) || 0,
+      totalTrips: tripsMap.get(String(s._id)) || 0,
+      status: s.lastActiveAt && s.lastActiveAt >= activeSince ? 'Active' : 'Inactive',
+      joinedDate: (s as any).createdAt,
+    }));
+
+    return {
+      stats: {
+        totalPassengers,
+        activeThisWeek,
+        averageBalance: Math.round(balanceAgg[0]?.avgBalance || 0),
+        totalSpent: spentAgg[0]?.total || 0,
+      },
+      items,
+      total,
+      page,
+      limit,
+    };
+  }
+
+  // ---------- transactions ----------
+
+  async getTransactionsPage(query: {
+    search?: string;
+    type?: string;
+    status?: string;
+    page?: number;
+    limit?: number;
+  }) {
+    const { from: todayStart } = this.resolvePeriod('today');
+
+    const [totalVolumeAgg, todaysTransactions, pendingTransactions, failedTransactions, logs] =
+      await Promise.all([
+        this.transactionModel.aggregate([
+          { $match: { status: 'SUCCESS', hidden: { $ne: true } } },
+          { $group: { _id: null, total: { $sum: '$amount' } } },
+        ]),
+        this.transactionModel.countDocuments({
+          createdAt: { $gte: todayStart },
+          hidden: { $ne: true },
+        }),
+        this.transactionModel.countDocuments({ status: 'PENDING', hidden: { $ne: true } }),
+        this.transactionModel.countDocuments({ status: 'FAILED', hidden: { $ne: true } }),
+        this.getTransactionLogs(query),
+      ]);
+
+    return {
+      stats: {
+        totalVolume: totalVolumeAgg[0]?.total || 0,
+        todaysTransactions,
+        pendingTransactions,
+        failedTransactions,
+      },
+      ...logs,
+    };
+  }
+
+  async getTransactionDetail(id: string) {
+    const [tx] = await this.transactionModel.aggregate([
+      { $match: { _id: new Types.ObjectId(id) } },
+      {
+        $lookup: {
+          from: 'users',
+          localField: 'userId',
+          foreignField: '_id',
+          as: 'user',
+        },
+      },
+      { $unwind: { path: '$user', preserveNullAndEmptyArrays: true } },
+      {
+        $lookup: {
+          from: 'users',
+          localField: 'toUserId',
+          foreignField: '_id',
+          as: 'toUser',
+        },
+      },
+      { $unwind: { path: '$toUser', preserveNullAndEmptyArrays: true } },
+    ]);
+    if (!tx) throw new NotFoundException('Transaction not found');
+
+    return {
+      id: tx._id,
+      type: tx.type,
+      status: tx.status,
+      amount: tx.amount,
+      createdAt: tx.createdAt,
+      updatedAt: tx.updatedAt,
+      providerReference: tx.providerReference,
+      // Raw metadata is passed through as-is (bank details, provider
+      // method, rejection reason, etc.) rather than guessing at a single
+      // "mode of transaction" label - we don't store that as a clean field.
+      metadata: tx.metadata,
+      from: tx.user
+        ? { id: tx.user._id, fullName: tx.user.fullName, role: tx.user.role }
+        : null,
+      to: tx.toUser
+        ? {
+            id: tx.toUser._id,
+            fullName: tx.toUser.fullName,
+            role: tx.toUser.role,
+            driverTagNumber: tx.toUser.driverTagNumber,
+          }
+        : null,
+    };
+  }
+
+  async hideTransaction(id: string) {
+    const tx = await this.transactionModel.findByIdAndUpdate(
+      id,
+      { $set: { hidden: true } },
+      { new: true },
+    );
+    if (!tx) throw new NotFoundException('Transaction not found');
+    return { ok: true };
+  }
+
+  async approveWithdrawalTransaction(id: string) {
+    return this.walletService.approveWithdrawal(id);
+  }
+
+  async rejectWithdrawalTransaction(id: string, reason?: string) {
+    return this.walletService.rejectWithdrawal(id, reason);
+  }
+
+  async retryWithdrawalTransaction(id: string) {
+    return this.walletService.retryWithdrawal(id);
+  }
+
+  // ---------- payments & withdrawals ----------
+
+  private maskAccountNumber(accountNumber?: string) {
+    if (!accountNumber) return undefined;
+    return accountNumber.length > 4 ? `***** ${accountNumber.slice(-4)}` : accountNumber;
+  }
+
+  async getPaymentsPage(query: {
+    search?: string;
+    status?: string;
+    page?: number;
+    limit?: number;
+  }) {
+    const [pendingAgg, totalPaidOutAgg, pendingWithdrawalsRaw, paymentHistory] =
+      await Promise.all([
+        this.transactionModel.aggregate([
+          { $match: { type: 'WITHDRAWAL', status: 'PENDING', hidden: { $ne: true } } },
+          { $group: { _id: null, total: { $sum: '$amount' }, count: { $sum: 1 } } },
+        ]),
+        this.transactionModel.aggregate([
+          { $match: { type: 'WITHDRAWAL', status: 'SUCCESS', hidden: { $ne: true } } },
+          { $group: { _id: null, total: { $sum: '$amount' } } },
+        ]),
+        this.transactionModel.aggregate([
+          { $match: { type: 'WITHDRAWAL', status: 'PENDING', hidden: { $ne: true } } },
+          { $sort: { createdAt: -1 } },
+          { $limit: 20 },
+          {
+            $lookup: { from: 'users', localField: 'userId', foreignField: '_id', as: 'user' },
+          },
+          { $unwind: '$user' },
+          {
+            $project: {
+              _id: 0,
+              id: '$_id',
+              driverName: '$user.fullName',
+              bankName: '$metadata.bank.bankName',
+              accountNumber: '$metadata.bank.accountNumber',
+              amount: 1,
+              createdAt: 1,
+            },
+          },
+        ]),
+        this.getTransactionLogs({ ...query, type: 'WITHDRAWAL' }),
+      ]);
+
+    const pendingWithdrawals = pendingWithdrawalsRaw.map((p: any) => ({
+      id: p.id,
+      driverName: p.driverName,
+      bankName: p.bankName,
+      maskedAccountNumber: this.maskAccountNumber(p.accountNumber),
+      amount: p.amount,
+      createdAt: p.createdAt,
+    }));
+
+    return {
+      stats: {
+        pendingWithdrawalsAmount: pendingAgg[0]?.total || 0,
+        totalPaidOut: totalPaidOutAgg[0]?.total || 0,
+        // No commission/fee model exists yet - withdrawals pay out in full.
+        platformCommission: 0,
+        // There's no separately-tracked "processing" state: a withdrawal is
+        // PENDING until approved, and disbursement resolves to
+        // SUCCESS/FAILED synchronously in that same request. This aliases
+        // the pending count rather than a real distinct state.
+        processing: pendingAgg[0]?.count || 0,
+      },
+      pendingWithdrawals,
+      paymentHistory,
+    };
+  }
+
+  async getPaymentDetail(id: string) {
+    const [tx] = await this.transactionModel.aggregate([
+      { $match: { _id: new Types.ObjectId(id), type: 'WITHDRAWAL' } },
+      {
+        $lookup: { from: 'users', localField: 'userId', foreignField: '_id', as: 'user' },
+      },
+      { $unwind: { path: '$user', preserveNullAndEmptyArrays: true } },
+    ]);
+    if (!tx) throw new NotFoundException('Payment not found');
+
+    const bank = tx.metadata?.bank || {};
+    const transferFee = 0; // no fee model exists yet - driver receives it in full
+
+    return {
+      id: tx._id,
+      status: tx.status,
+      type: tx.type,
+      requestedAmount: tx.amount,
+      transferFee,
+      driverReceives: tx.amount - transferFee,
+      from: tx.user
+        ? { id: tx.user._id, fullName: tx.user.fullName, role: tx.user.role }
+        : null,
+      to: {
+        bankName: bank.bankName,
+        maskedAccountNumber: this.maskAccountNumber(bank.accountNumber),
+      },
+      paymentId: tx._id,
+      reference: tx.providerReference,
+      modeOfPayment: 'Bank transfer',
+      failureReason: tx.metadata?.failureReason,
+      rejectionReason: tx.metadata?.rejectionReason,
+      createdAt: tx.createdAt,
+      updatedAt: tx.updatedAt,
+    };
+  }
+
+  // ---------- reports & issues ----------
+
+  async getReportsPage(query: {
+    status?: string;
+    search?: string;
+    page?: number;
+    limit?: number;
+  }) {
+    const [stats, logs] = await Promise.all([
+      this.reportsService.getStats(),
+      this.reportsService.listForAdmin(query),
+    ]);
+    return { stats, ...logs };
+  }
+
+  async getReportDetail(id: string) {
+    return this.reportsService.getDetailForAdmin(id);
+  }
+
+  async resolveReport(id: string, adminId: string, adminNote?: string) {
+    return this.reportsService.resolve(id, adminId, adminNote);
+  }
+
+  async hideReport(id: string) {
+    return this.reportsService.hide(id);
+  }
+
+  // ---------- system announcements ----------
+
+  async sendAnnouncement(
+    adminId: string,
+    message: string,
+    audience?: 'ALL' | 'STUDENT' | 'DRIVER',
+  ) {
+    return this.announcementsService.send(adminId, message, audience);
+  }
+
+  async listAnnouncements(page?: number, limit?: number) {
+    return this.announcementsService.listForAdmin(page, limit);
   }
 }
